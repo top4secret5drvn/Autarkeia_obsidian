@@ -195,23 +195,22 @@ const REWARD_TYPES = {
 
 /* ---------- Конфигурация прогрессии по умолчанию ---------- */
 const DEFAULT_LEVELING_CONFIG = {
-  baseXP: 150,          // Базовый опыт для уровня 1 (тяжелее)
-  growthFactor: 2.0,    // Коэффициент роста (2.0 = очень тяжелая прогрессия)
+  baseXP: 100,          // Базовый опыт для уровня 1
+  growthFactor: 1.5,    // Коэффициент роста (1.5 = средняя прогрессия)
   formula: 'quadratic', // 'linear', 'quadratic', 'exponential'
-  gloryPerLevel: 50     // Очки славы за каждый уровень
+  gloryPerLevel: 1      // Очки славы за каждый уровень (теперь 1)
 };
 
 /* ---------- Структура наград по умолчанию ---------- */
 const DEFAULT_REWARDS_DATA = {
   currency: 0,          // Очки славы (валюта за уровни)
-  inventory: [],        // Разблокированные награды [{id, type, name, unlockedAt}]
-  slots: {
-    accessory: null,    // Текущий носимый аксессуар {id, name}
-    decor: null         // Текущий декор {id, name}
-  },
+  inventory: [],        // Разблокированные награды [{id, type, name, description, unlockedAt}]
+  slots: [],            // Слоты для трофеев [{id, trophyId, trophyName, type}]
   titles: [],           // Разблокированные титулы характеристик [{stat, level, title}]
   accesses: [],         // Разблокированные доступы к испытаниям [{id, name}]
-  lastProcessedLevel: 0 // Последний обработанный уровень для начисления наград
+  lastProcessedLevel: 0,// Последний обработанный уровень для начисления наград
+  unlockedSlots: 0,     // Количество разблокированных слотов (равно уровню игрока)
+  levelingConfig: { ...DEFAULT_LEVELING_CONFIG } // Сохраняемая конфигурация прогрессии
 };
 
 /* ---------- XP за действия ---------- */
@@ -383,12 +382,25 @@ class Store {
     if (rawData.lastProcessedLevel === undefined) {
       rawData.lastProcessedLevel = 0;
     }
-    // Миграция: слоты теперь объекты {id, name}
-    if (typeof rawData.slots.accessory === 'string') {
-      rawData.slots.accessory = rawData.slots.accessory ? { id: rawData.slots.accessory, name: rawData.slots.accessory } : null;
+    // Миграция: добавляем levelingConfig если нет
+    if (!rawData.levelingConfig) {
+      rawData.levelingConfig = { ...DEFAULT_LEVELING_CONFIG };
     }
-    if (typeof rawData.slots.decor === 'string') {
-      rawData.slots.decor = rawData.slots.decor ? { id: rawData.slots.decor, name: rawData.slots.decor } : null;
+    // Миграция: слоты теперь массив объектов
+    if (rawData.slots && !Array.isArray(rawData.slots)) {
+      rawData.slots = [];
+    }
+    // Миграция: инвентарь должен быть массивом
+    if (!rawData.inventory || !Array.isArray(rawData.inventory)) {
+      rawData.inventory = [];
+    }
+    // Миграция: валюта должна быть числом
+    if (rawData.currency === undefined || typeof rawData.currency !== 'number') {
+      rawData.currency = 0;
+    }
+    // Миграция: разблокированные слоты
+    if (rawData.unlockedSlots === undefined || typeof rawData.unlockedSlots !== 'number') {
+      rawData.unlockedSlots = 0;
     }
     this.rewardsData = rawData;
     if (!await this.a.exists(rp)) await this.saveRewards();
@@ -431,14 +443,30 @@ class Store {
       if (rawData.lastProcessedLevel === undefined) {
         rawData.lastProcessedLevel = 0;
       }
-      // Миграция: слоты теперь объекты {id, name}
-      if (typeof rawData.slots.accessory === 'string') {
-        rawData.slots.accessory = rawData.slots.accessory ? { id: rawData.slots.accessory, name: rawData.slots.accessory } : null;
+      // Миграция: добавляем levelingConfig если нет
+      if (!rawData.levelingConfig) {
+        rawData.levelingConfig = { ...DEFAULT_LEVELING_CONFIG };
       }
-      if (typeof rawData.slots.decor === 'string') {
-        rawData.slots.decor = rawData.slots.decor ? { id: rawData.slots.decor, name: rawData.slots.decor } : null;
+      // Миграция: слоты теперь массив объектов
+      if (rawData.slots && !Array.isArray(rawData.slots)) {
+        rawData.slots = [];
+      }
+      // Миграция: инвентарь должен быть массивом
+      if (!rawData.inventory || !Array.isArray(rawData.inventory)) {
+        rawData.inventory = [];
+      }
+      // Миграция: валюта должна быть числом
+      if (rawData.currency === undefined || typeof rawData.currency !== 'number') {
+        rawData.currency = 0;
+      }
+      // Миграция: разблокированные слоты
+      if (rawData.unlockedSlots === undefined || typeof rawData.unlockedSlots !== 'number') {
+        rawData.unlockedSlots = 0;
       }
       this.rewardsData = rawData;
+    } else {
+      // Если файл не существует, создаём дефолтные данные
+      this.rewardsData = { ...DEFAULT_REWARDS_DATA };
     }
   }
   async listDays() { try { const { files } = await this.a.list(this.base + '/journal'); return files.map(f => f.split('/').pop().replace('.json', '')).sort(); } catch (e) { return []; } }
@@ -496,7 +524,7 @@ async function goalProgress(store, g, today) {
   let sum = 0;
   for (const d of (await store.listDays()).filter(x => x >= from && x <= to)) {
     const day = await store.loadDay(d);
-    if (g.metric === 'hours') {
+    if (g.targetType === 'skill') {
       const sk = store.ref.skills.find(s => s.id === g.targetId);
       if (sk) for (const hr of sk.habitRefs || []) { const l = day.habitLogs.find(x => x.habitId === hr.habitId); if (l && l.hours) sum += l.hours * (hr.weight ?? 1); }
     } else for (const l of day.activityLogs) if (l.activityId === g.targetId) sum += +l.amount || 0;
@@ -585,39 +613,38 @@ async function computeTotalXP(store) {
 // Получить текущий уровень и прогресс игрока
 async function getPlayerProgress(store) {
   const totalXP = await computeTotalXP(store);
-  return { ...getPlayerLevel(totalXP), totalXP };
+  // Используем сохранённую конфигурацию прогрессии
+  const cfg = store.rewardsData?.levelingConfig || DEFAULT_LEVELING_CONFIG;
+  return { ...getPlayerLevel(totalXP, cfg), totalXP };
 }
 
 /* ---------- Проверка и начисление наград за уровни ---------- */
 async function checkAndGrantLevelRewards(store) {
   const progress = await getPlayerProgress(store);
   const rewardsData = store.rewardsData;
-  const cfg = DEFAULT_LEVELING_CONFIG;
+  // Используем сохранённую конфигурацию, а не дефолтную
+  const cfg = rewardsData.levelingConfig || DEFAULT_LEVELING_CONFIG;
   
   // Проверяем все уровни от lastProcessedLevel до текущего
   let grantedGlory = 0;
+  let newSlots = 0;
   for (let lvl = rewardsData.lastProcessedLevel + 1; lvl <= progress.level; lvl++) {
-    // Начисляем очки славы за уровень
+    // Начисляем 1 очко славы за уровень
     grantedGlory += cfg.gloryPerLevel;
     
-    // Создаем универсальную награду за уровень
-    const rewardId = `level_${lvl}`;
-    if (!rewardsData.inventory.find(r => r.id === rewardId)) {
-      rewardsData.inventory.push({
-        id: rewardId,
-        type: REWARD_TYPES.DECOR,
-        name: `Награда за уровень ${lvl}`,
-        unlockedAt: iso(new Date())
-      });
-    }
+    // Разблокируем один слот за уровень
+    rewardsData.unlockedSlots = Math.max(rewardsData.unlockedSlots, lvl);
+    newSlots++;
   }
   
-  // Начисляем очки славы
-  if (grantedGlory > 0) {
+  // Начисляем очки славы только если есть изменения
+  if (grantedGlory > 0 || newSlots > 0) {
     rewardsData.currency += grantedGlory;
     rewardsData.lastProcessedLevel = progress.level;
+    // Синхронизируем store.rewardsData перед сохранением
+    store.rewardsData = rewardsData;
     await store.saveRewards();
-    return { grantedGlory, newLevel: progress.level };
+    return { grantedGlory, newLevel: progress.level, unlockedSlots: rewardsData.unlockedSlots };
   }
   
   return null;
@@ -639,7 +666,16 @@ class DayModal extends Modal {
   async onOpen() {
     const { store, date } = this, ref = store.ref, day = await store.loadDay(date);
     const el = this.contentEl; el.addClass('lt');
-    el.createEl('h2', { text: `День · ${date} · ${WD[(parseISO(date).getDay() + 6) % 7]}` });
+    
+    // Верхняя панель действий (для iOS - всегда видима)
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: `📅 ${date} · ${WD[(parseISO(date).getDay() + 6) % 7]}`, style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    const saveBtnTop = actionsBar.createEl('button', { text: '💾 Сохранить', cls: 'mod-cta' });
+    saveBtnTop.style.marginLeft = '8px';
+    saveBtnTop.onclick = async () => { await store.saveDay(date); new Notice('Сохранено ✓'); };
+    actionsBar.createEl('button', { text: 'Готово ✓', cls: 'mod-cta' }).onclick = async () => { await store.saveDay(date); this.close(); };
+    
+    el.createEl('h2', { text: 'Трекер дня', style: 'margin-top: 8px;' });
     const footer = el.createDiv({ cls: 'lt-footer' });
     const footerText = () => {
       const r = computeDayStats(ref, day), k = dayKcal(ref, day), f = dayFinance(ref, day), c = dayCompletion(ref, day);
@@ -661,10 +697,7 @@ class DayModal extends Modal {
       cb.addEventListener('change', () => { l.done = cb.checked; refresh(); });
       row.createEl('span', { cls: 'lt-name', text: h.name });
       row.createEl('span', { cls: 'lt-chip', text: fmtStats(h.baseEffects) });
-      const st = row.createDiv({ cls: 'lt-step' });
-      const hrs = st.createEl('span', { text: fmtH(l.hours || 0) });
-      st.createEl('button', { text: '−' }).onclick = () => { l.hours = Math.max(0, (+l.hours || 0) - 0.25); hrs.setText(fmtH(l.hours)); refresh(); };
-      st.createEl('button', { text: '+' }).onclick = () => { l.hours = (+l.hours || 0) + 0.25; hrs.setText(fmtH(l.hours)); refresh(); };
+      // Убрали поле ввода часов из модального окна дня - часы теперь в навыках
       const sk = row.createEl('span', { cls: 'lt-chip' });
       habitStreak(store, h.id, date).then(n => sk.setText(n ? `🔥${n}` : ''));
     }
@@ -683,12 +716,16 @@ class DayModal extends Modal {
       const l = day.activityLogs.find(x => x.activityId === a.id);
       const row = el.createDiv({ cls: 'lt-row' });
       row.createEl('span', { cls: 'lt-name', text: a.name });
-      const st = row.createDiv({ cls: 'lt-step' });
-      const amt = st.createEl('span', { text: String(+l.amount || 0) });
+      const inp = row.createEl('input', { type: 'number', cls: 'lt-input', attr: { inputmode: 'numeric', min: '0', step: '1' } });
+      inp.value = String(+l.amount || 0);
       const kc = row.createEl('span', { cls: 'lt-chip' });
-      const upd = () => { amt.setText(String(l.amount)); kc.setText(`−${Math.round(a.kcalPerUnit * l.amount)} ккал`); refresh(); };
-      st.createEl('button', { text: '−' }).onclick = () => { l.amount = Math.max(0, (+l.amount || 0) - 1); upd(); };
-      st.createEl('button', { text: '+' }).onclick = () => { l.amount = (+l.amount || 0) + 1; upd(); };
+      const upd = () => { 
+        const val = Math.max(0, +inp.value || 0);
+        l.amount = val;
+        kc.setText(`−${Math.round(a.kcalPerUnit * l.amount)} ккал`); 
+        refresh(); 
+      };
+      inp.addEventListener('input', upd);
       kc.setText(`−${Math.round(a.kcalPerUnit * (+l.amount || 0))} ккал`);
     }
 
@@ -746,7 +783,7 @@ class DayModal extends Modal {
     ta.addEventListener('input', () => { day.comment = ta.value; save(); });
 
     footer.setText(footerText());
-    el.createEl('button', { text: 'Готово ✓', cls: 'mod-cta' }).onclick = async () => { await store.saveDay(date); this.close(); };
+    // Кнопка внизу остаётся для удобства, но основная уже вверху
   }
 }
 
@@ -755,10 +792,15 @@ class WeekModal extends Modal {
   constructor(app, store, date) { super(app); this.store = store; this.date = date; }
   async onOpen() {
     const { store } = this, ref = store.ref, el = this.contentEl; el.addClass('lt');
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: `📅 Неделя · ${this.date}`, style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    
     const mon = mondayOf(parseISO(this.date)), today = iso(new Date());
     const days = [];
     for (let i = 0; i < 7; i++) { const d = iso(addDays(mon, i)); days.push({ d, future: d > today, day: d <= today ? await store.loadDay(d) : null }); }
-    el.createEl('h2', { text: `Неделя · ${days[0].d} — ${days[6].d}` });
+    el.createEl('h2', { text: 'Обзор недели', style: 'margin-top: 8px;' });
     const wc = await weekCompletion(store, ref, today);
     el.createDiv({ cls: 'lt-big' }).createEl('span', { text: `🎯 Итог недели: ${wc.pct}% (${wc.done}/${wc.total})` });
 
@@ -853,7 +895,13 @@ class RefModal extends Modal {
   onOpen() { this.render(); }
   async render() {
     const ref = this.store.ref, el = this.contentEl; el.empty(); el.addClass('lt');
-    el.createEl('h2', { text: 'Справочники' });
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: '📚 Справочники', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    actionsBar.createEl('button', { text: '💾 Сохранить', cls: 'mod-cta' }).onclick = async () => { await this.store.saveRef(); new Notice('Справочники сохранены ✓'); };
+    
+    el.createEl('h2', { text: 'Управление справочниками', style: 'margin-top: 8px;' });
     const cols = [
       ['habits', 'Привычки', h => h.name],
       ['activities', 'Активности', a => a.name],
@@ -992,31 +1040,11 @@ class EditModal extends Modal {
   onOpen() {
     const el = this.contentEl; el.addClass('lt');
     const it = this.item;
-    el.createEl('h2', { text: (this.isNew ? 'Новая · ' : 'Правка · ') + TITLES[this.collKey] });
-    const F = new FormBuilder(el, it, this.store);
-    switch (this.collKey) {
-      case 'habits': F.text('name', 'Название'); F.stats('baseEffects', 'Эффекты за выполнение'); break;
-      case 'activities': F.text('name', 'Название'); F.num('kcalPerUnit', 'ккал за единицу'); break;
-      case 'substances': F.text('name', 'Название'); break;
-      case 'skills': F.text('name', 'Название'); F.text('description', 'Описание'); F.refs('habitRefs'); break;
-      case 'synergyRules': F.endpoint('source', 'Условие 1'); F.endpoint('target', 'Условие 2'); F.stats('bonus', 'Бонус, если оба в один день'); break;
-      case 'goals': {
-        F.text('name', 'Название');
-        let refill = null;
-        F.select('targetType', 'Тип цели', [['activity', 'активность'], ['skill', 'навык']], () => refill && refill());
-        F.refSelect('targetId', 'Объект', () => it.targetType === 'skill' ? 'skills' : 'activities', f => { refill = f; });
-        F.select('metric', 'Метрика', [['km', 'км'], ['count', 'кол-во'], ['hours', 'часы']]);
-        F.num('targetValue', 'Целевое значение');
-        F.date('start', 'Начало'); F.date('end', 'Конец (опц.)');
-        F.select('status', 'Статус', [['active', 'активна'], ['achieved', 'выполнена'], ['failed', 'провалена'], ['cancelled', 'отменена']]);
-        break;
-      }
-      case 'finCategories':
-        F.text('name', 'Название');
-        F.select('type', 'Тип', [['income', '↓ доход'], ['expense', '↑ расход']]);
-        break;
-    }
-    el.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: (this.isNew ? 'Новая · ' : 'Правка · ') + TITLES[this.collKey], style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    actionsBar.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
       if (this.collKey !== 'synergyRules' && !it.name) { new Notice('Нужно название'); return; }
       if (this.collKey === 'synergyRules' && (!it.source.id || !it.target.id)) { new Notice('Выбери оба конца синергии'); return; }
       if (this.collKey === 'goals' && it.status === 'achieved') {
@@ -1032,6 +1060,32 @@ class EditModal extends Modal {
       await this.store.saveRef();
       this.onSaved(); this.close();
     };
+    
+    el.createEl('h2', { text: 'Редактирование', style: 'margin-top: 8px;' });
+    const F = new FormBuilder(el, it, this.store);
+    switch (this.collKey) {
+      case 'habits': F.text('name', 'Название'); F.stats('baseEffects', 'Эффекты за выполнение'); break;
+      case 'activities': F.text('name', 'Название'); F.num('kcalPerUnit', 'ккал за единицу'); break;
+      case 'substances': F.text('name', 'Название'); break;
+      case 'skills': F.text('name', 'Название'); F.text('description', 'Описание'); F.refs('habitRefs'); break;
+      case 'synergyRules': F.endpoint('source', 'Условие 1'); F.endpoint('target', 'Условие 2'); F.stats('bonus', 'Бонус, если оба в один день'); break;
+      case 'goals': {
+        F.text('name', 'Название');
+        let refill = null;
+        F.select('targetType', 'Тип цели', [['activity', 'активность'], ['skill', 'навык']], () => refill && refill());
+        F.refSelect('targetId', 'Объект', () => it.targetType === 'skill' ? 'skills' : 'activities', f => { refill = f; });
+        F.select('metric', 'Метрика', [['km', 'км'], ['count', 'кол-во']]);
+        F.num('targetValue', 'Целевое значение');
+        F.date('start', 'Начало'); F.date('end', 'Конец (опц.)');
+        F.select('status', 'Статус', [['active', 'активна'], ['achieved', 'выполнена'], ['failed', 'провалена'], ['cancelled', 'отменена']]);
+        break;
+      }
+      case 'finCategories':
+        F.text('name', 'Название');
+        F.select('type', 'Тип', [['income', '↓ доход'], ['expense', '↑ расход']]);
+        break;
+    }
+    // Кнопка внизу остаётся для удобства, но основная уже вверху
   }
 }
 
@@ -1040,17 +1094,23 @@ class AchievementEditModal extends Modal {
   constructor(app, store, onSaved) { super(app); this.store = store; this.onSaved = onSaved; this.item = { id: uid('ach'), title: '', description: '', date: iso(new Date()) }; }
   onOpen() {
     const el = this.contentEl; el.addClass('lt');
-    el.createEl('h2', { text: 'Новое достижение' });
-    const F = new FormBuilder(el, this.item, this.store);
-    F.text('title', 'Название');
-    F.text('description', 'Описание');
-    F.date('date', 'Дата получения');
-    el.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: '🏆 Новое достижение', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    actionsBar.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
       if (!this.item.title) { new Notice('Нужно название'); return; }
       this.store.ref.achievements.push(this.item);
       await this.store.saveRef();
       this.onSaved(); this.close();
     };
+    
+    el.createEl('h2', { text: 'Достижение', style: 'margin-top: 8px;' });
+    const F = new FormBuilder(el, this.item, this.store);
+    F.text('title', 'Название');
+    F.text('description', 'Описание');
+    F.date('date', 'Дата получения');
+    // Кнопка внизу остаётся для удобства, но основная уже вверху
   }
 }
 
@@ -1060,7 +1120,12 @@ class WorkItemsModal extends Modal {
   onOpen() { this.render(); }
   render() {
     const el = this.contentEl; el.empty(); el.addClass('lt');
-    el.createEl('h2', { text: '📋 Дела и идеи' });
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: '📋 Дела и идеи', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    
+    el.createEl('h2', { text: 'Управление задачами', style: 'margin-top: 8px;' });
     const tabs = el.createDiv({ cls: 'lt-tabs' });
     const kinds = [['all', 'Все'], ['task', 'Дела'], ['idea', 'Идеи'], ['done', 'Выполненные']];
     let curKind = 'all';
@@ -1121,7 +1186,20 @@ class WorkItemEditModal extends Modal {
   }
   onOpen() {
     const el = this.contentEl; el.addClass('lt');
-    el.createEl('h2', { text: (this.isNew ? 'Новый' : 'Правка') + ' · ' + (this.item.kind === 'task' ? 'Дело' : 'Идея') });
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: (this.isNew ? 'Новый' : 'Правка') + ' · ' + (this.item.kind === 'task' ? 'Дело' : 'Идея'), style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    actionsBar.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
+      if (!this.item.name) { new Notice('Нужно название'); return; }
+      if (this.item.status === 'done' && !this.item.doneAt) this.item.doneAt = iso(new Date());
+      if (this.isNew) this.store.work.items.push(this.item);
+      else { const i = this.store.work.items.findIndex(x => x.id === this.item.id); if (i >= 0) this.store.work.items[i] = this.item; }
+      await this.store.saveWorkItems();
+      this.onSaved(); this.close();
+    };
+    
+    el.createEl('h2', { text: 'Редактирование', style: 'margin-top: 8px;' });
     const F = new FormBuilder(el, this.item, this.store);
     F.text('name', 'Название');
     F.text('description', 'Описание');
@@ -1163,14 +1241,7 @@ class WorkItemEditModal extends Modal {
       el.createEl('div', { cls: 'lt-notice', text: `🔒 Требование: ${statLabel} >= ${this.item.minStatRequirement.threshold} (нельзя изменить)` });
     }
     
-    el.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
-      if (!this.item.name) { new Notice('Нужно название'); return; }
-      if (this.item.status === 'done' && !this.item.doneAt) this.item.doneAt = iso(new Date());
-      if (this.isNew) this.store.work.items.push(this.item);
-      else { const i = this.store.work.items.findIndex(x => x.id === this.item.id); if (i >= 0) this.store.work.items[i] = this.item; }
-      await this.store.saveWorkItems();
-      this.onSaved(); this.close();
-    };
+    // Кнопка внизу остаётся для удобства, но основная уже вверху
   }
 }
 
@@ -1180,17 +1251,26 @@ class RewardsModal extends Modal {
   async onOpen() {
     const el = this.contentEl; el.addClass('lt-rewards');
     const ref = this.store.ref;
+    
+    // Сначала загружаем свежие данные из файла
+    await this.store.loadRewards();
     const rewardsData = this.store.rewardsData;
     
-    // Сначала проверяем и начисляем награды за уровни
+    // Затем проверяем и начисляем награды за уровни
     await checkAndGrantLevelRewards(this.store);
-    // Перезагружаем данные после начисления
+    // Перезагружаем данные после начисления наград
     await this.store.loadRewards();
+    // Обновляем локальную переменную
+    const updatedRewardsData = this.store.rewardsData;
     
     // Расчет текущего уровня и XP
     const progress = await getPlayerProgress(this.store);
     
-    el.createEl('h2', { text: '🏆 Награды и титулы' });
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: '🏆 Награды и титулы', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    
+    el.createEl('h2', { text: 'Панель наград', style: 'margin-top: 8px;' });
     
     // Секция 1: Уровень игрока
     const levelSection = el.createDiv({ cls: 'lt-rewards-section' });
@@ -1202,7 +1282,7 @@ class RewardsModal extends Modal {
     levelSection.createEl('button', { text: '🔄 Проверить награды', cls: 'mod-cta' }).onclick = async () => {
       const result = await checkAndGrantLevelRewards(this.store);
       if (result) {
-        new Notice(`Получено ${result.grantedGlory} очков славы! Уровень: ${result.newLevel}`);
+        new Notice(`Получено ${result.grantedGlory} очк. славы! Слоты: ${result.unlockedSlots}`);
         this.close();
         new RewardsModal(this.app, this.store).open();
       } else {
@@ -1225,35 +1305,51 @@ class RewardsModal extends Modal {
     // Секция 3: Очки славы (валюта наград)
     el.createEl('h3', { text: '💰 Очки славы' });
     const currencyRow = el.createDiv({ cls: 'lt-rewards-currency' });
-    currencyRow.createEl('span', { text: `Доступно: ${rewardsData.currency} 🪙` });
+    currencyRow.createEl('span', { text: `Доступно: ${updatedRewardsData.currency} 🪙` });
     
-    // Секция 4: Инвентарь наград с кнопками экипировки
-    el.createEl('h3', { text: '🎒 Инвентарь' });
-    if (rewardsData.inventory.length === 0) {
-      el.createEl('p', { text: 'Пока нет наград. Выполняйте задачи и повышайте уровень!' });
+    // Секция 4: Инвентарь трофеев (купили -> можно поместить в слот)
+    el.createEl('h3', { text: '🎒 Инвентарь трофеев' });
+    if (updatedRewardsData.inventory.length === 0) {
+      el.createEl('p', { text: 'Пока нет трофеев. Создайте трофей за очки славы!' });
     } else {
-      for (const reward of rewardsData.inventory) {
+      for (const trophy of updatedRewardsData.inventory) {
         const row = el.createDiv({ cls: 'lt-row' });
-        const icon = reward.type === REWARD_TYPES.ACCESSORY ? '📿' : reward.type === REWARD_TYPES.DECOR ? '🏺' : '📜';
-        row.createEl('span', { text: `${icon} ${reward.name}` });
+        const icon = trophy.type === REWARD_TYPES.ACCESSORY ? '📿' : trophy.type === REWARD_TYPES.DECOR ? '🏺' : '📜';
+        const nameSpan = row.createEl('span', { text: `${icon} ${trophy.name}` });
+        // Отображаем описание если есть
+        if (trophy.description) {
+          row.createEl('div', { cls: 'lt-description', text: trophy.description });
+        }
         
-        // Кнопки управления
+        // Проверяем, экипирован ли этот трофей в какой-либо слот
+        const equippedSlot = rewardsData.slots.find(s => s.trophyId === trophy.id);
         const actions = row.createDiv({ cls: 'lt-actions' });
         
-        if (reward.type === REWARD_TYPES.ACCESSORY || reward.type === REWARD_TYPES.DECOR) {
-          const slotType = reward.type === REWARD_TYPES.ACCESSORY ? 'accessory' : 'decor';
-          const isEquipped = rewardsData.slots[slotType] && rewardsData.slots[slotType].id === reward.id;
-          
-          if (isEquipped) {
+        if (trophy.type === REWARD_TYPES.ACCESSORY || trophy.type === REWARD_TYPES.DECOR) {
+          if (equippedSlot) {
             actions.createEl('button', { text: 'Снять', cls: 'mod-warning' }).onclick = async () => {
-              rewardsData.slots[slotType] = null;
+              rewardsData.slots = rewardsData.slots.filter(s => s.trophyId !== trophy.id);
+              this.store.rewardsData = rewardsData;
               await this.store.saveRewards();
               this.close();
               new RewardsModal(this.app, this.store).open();
             };
           } else {
-            actions.createEl('button', { text: 'Экипировать', cls: 'mod-cta' }).onclick = async () => {
-              rewardsData.slots[slotType] = { id: reward.id, name: reward.name };
+            actions.createEl('button', { text: 'Надеть', cls: 'mod-cta' }).onclick = async () => {
+              // Проверяем, есть ли свободный слот для этого типа
+              const slotType = trophy.type;
+              const occupiedCount = rewardsData.slots.filter(s => s.type === slotType).length;
+              if (occupiedCount >= rewardsData.unlockedSlots) {
+                new Notice('Нет свободных слотов! Повышайте уровень.');
+                return;
+              }
+              rewardsData.slots.push({ 
+                id: 'slot_' + Date.now(), 
+                trophyId: trophy.id, 
+                trophyName: trophy.name, 
+                type: slotType 
+              });
+              this.store.rewardsData = rewardsData;
               await this.store.saveRewards();
               this.close();
               new RewardsModal(this.app, this.store).open();
@@ -1261,48 +1357,66 @@ class RewardsModal extends Modal {
           }
         }
         
-        row.createEl('span', { cls: 'lt-chip', text: new Date(reward.unlockedAt).toLocaleDateString() });
+        row.createEl('span', { cls: 'lt-chip', text: new Date(trophy.unlockedAt).toLocaleDateString() });
       }
     }
     
     // Секция 5: Активные слоты
-    el.createEl('h3', { text: '🎯 Активные слоты' });
-    const slotsRow = el.createDiv({ cls: 'lt-row' });
-    slotsRow.createEl('span', { text: `Аксессуар: ${rewardsData.slots.accessory ? rewardsData.slots.accessory.name : '—'}` });
-    slotsRow.createEl('span', { text: `Декор: ${rewardsData.slots.decor ? rewardsData.slots.decor.name : '—'}` });
+    el.createEl('h3', { text: `🎯 Слоты для трофеев (${rewardsData.slots.length}/${rewardsData.unlockedSlots})` });
+    if (rewardsData.slots.length === 0) {
+      el.createEl('p', { text: 'Нет экипированных трофеев' });
+    } else {
+      for (const slot of rewardsData.slots) {
+        const slotRow = el.createDiv({ cls: 'lt-row' });
+        const icon = slot.type === REWARD_TYPES.ACCESSORY ? '📿' : '🏺';
+        slotRow.createEl('span', { text: `${icon} Слот: ${slot.trophyName || 'Пустой'}` });
+      }
+    }
     
-    // Кнопка добавления пользовательской награды
-    el.createEl('h3', { text: '➕ Добавить награду' });
+    // Кнопка создания трофея (тратим 1 очко славы)
+    el.createEl('h3', { text: '➕ Создать трофей (1 🪙)' });
     const addForm = el.createDiv({ cls: 'lt-form' });
-    const nameInput = addForm.createEl('input', { type: 'text', placeholder: 'Название награды', cls: 'lt-big-input' });
+    const nameInput = addForm.createEl('input', { type: 'text', placeholder: 'Название трофея (реальный предмет)', cls: 'lt-big-input' });
+    const descInput = addForm.createEl('input', { type: 'text', placeholder: 'Описание трофея (необязательно)', cls: 'lt-big-input' });
     const typeSelect = addForm.createEl('select', { cls: 'lt-big-select' });
-    typeSelect.createEl('option', { value: REWARD_TYPES.ACCESSORY, text: '📿 Аксессуар' });
-    typeSelect.createEl('option', { value: REWARD_TYPES.DECOR, text: '🏺 Декор' });
-    typeSelect.createEl('option', { value: REWARD_TYPES.TITLE, text: '📜 Титул' });
-    typeSelect.createEl('option', { value: REWARD_TYPES.ACCESS, text: '🔓 Доступ' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.ACCESSORY, text: '📿 Аксессуар (часы, кольцо, браслет...)' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.DECOR, text: '🏺 Декор (статуэтка, картина, грамота...)' });
     
-    addForm.createEl('button', { text: 'Добавить награду (10 🪙)', cls: 'mod-cta' }).onclick = async () => {
+    // Верхняя кнопка сохранения для iOS
+    const topSaveBtn = addForm.createEl('button', { text: '💾 Создать трофей', cls: 'mod-cta' });
+    topSaveBtn.style.marginBottom = '8px';
+    topSaveBtn.style.width = '100%';
+    
+    const createTrophy = async () => {
       if (!nameInput.value.trim()) {
-        new Notice('Введите название награды');
+        new Notice('Введите название трофея');
         return;
       }
-      if (rewardsData.currency < 10) {
-        new Notice('Недостаточно очков славы');
+      if (rewardsData.currency < 1) {
+        new Notice('Недостаточно очков славы (нужно 1 🪙)');
         return;
       }
       
-      rewardsData.inventory.push({
-        id: 'custom_' + Date.now(),
+      const newTrophy = {
+        id: 'trophy_' + Date.now(),
         type: typeSelect.value,
         name: nameInput.value.trim(),
+        description: descInput.value.trim() || '',
         unlockedAt: iso(new Date())
-      });
-      rewardsData.currency -= 10;
+      };
+      
+      rewardsData.inventory.push(newTrophy);
+      rewardsData.currency -= 1;
+      // Синхронизируем store.rewardsData перед сохранением
+      this.store.rewardsData = rewardsData;
       await this.store.saveRewards();
-      new Notice('Награда добавлена!');
+      new Notice('Трофей создан!');
       this.close();
       new RewardsModal(this.app, this.store).open();
     };
+    
+    topSaveBtn.onclick = createTrophy;
+    addForm.createEl('button', { text: 'Создать трофей', cls: 'mod-cta' }).onclick = createTrophy;
   }
 }
 
@@ -1315,7 +1429,11 @@ class DashboardModal extends Modal {
     const ref = this.store.ref;
     const day = await this.store.loadDay(today);
 
-    el.createEl('h2', { text: '📊 Дашборд персонажа' });
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: '📊 Дашборд персонажа', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    
+    el.createEl('h2', { text: 'Обзор прогресса', style: 'margin-top: 8px;' });
 
     // 0. Уровень и опыт игрока
     const progress = await getPlayerProgress(this.store);
@@ -1333,6 +1451,40 @@ class DashboardModal extends Modal {
     // Добавим кнопку для просмотра наград
     el.createEl('button', { text: '🏆 Награды и титулы', cls: 'mod-cta' }).onclick = () => { 
       new RewardsModal(this.app, this.store).open(); 
+    };
+    
+    // Настройки прогрессии уровней
+    el.createEl('h3', { text: '⚙️ Настройки прогрессии' });
+    const configForm = el.createDiv({ cls: 'lt-form' });
+    const formulaSelect = configForm.createEl('select', { cls: 'lt-big-select' });
+    // Используем сохранённую конфигурацию
+    const savedConfig = this.store.rewardsData.levelingConfig || DEFAULT_LEVELING_CONFIG;
+    formulaSelect.createEl('option', { value: 'linear', text: 'Линейная (легко)', selected: savedConfig.formula === 'linear' });
+    formulaSelect.createEl('option', { value: 'quadratic', text: 'Квадратичная (средне)', selected: savedConfig.formula === 'quadratic' });
+    formulaSelect.createEl('option', { value: 'exponential', text: 'Экспоненциальная (сложно)', selected: savedConfig.formula === 'exponential' });
+    
+    const baseXPInput = configForm.createEl('input', { type: 'number', placeholder: 'Базовый XP', value: savedConfig.baseXP, cls: 'lt-big-input' });
+    const growthInput = configForm.createEl('input', { type: 'number', placeholder: 'Коэф. роста', value: savedConfig.growthFactor, step: '0.1', cls: 'lt-big-input' });
+    const gloryPerLevelInput = configForm.createEl('input', { type: 'number', placeholder: 'Очков славы за уровень', value: savedConfig.gloryPerLevel, cls: 'lt-big-input' });
+    
+    configForm.createEl('button', { text: 'Применить настройки', cls: 'mod-cta' }).onclick = async () => {
+      // Обновляем сохранённую конфигурацию
+      this.store.rewardsData.levelingConfig = {
+        formula: formulaSelect.value,
+        baseXP: parseInt(baseXPInput.value) || 100,
+        growthFactor: parseFloat(growthInput.value) || 1.5,
+        gloryPerLevel: parseInt(gloryPerLevelInput.value) || 1
+      };
+      await this.store.saveRewards();
+      new Notice(`Прогрессия обновлена: ${formulaSelect.value}, база ${this.store.rewardsData.levelingConfig.baseXP} XP`);
+      // Пересчитываем уровень с новыми параметрами
+      const newProgress = await getPlayerProgress(this.store);
+      // Проверяем и начисляем награды с новой конфигурацией
+      await checkAndGrantLevelRewards(this.store);
+      // Синхронизируем данные перед перезагрузкой модального окна
+      this.store.rewardsData = this.store.rewardsData;
+      this.close();
+      new DashboardModal(this.app, this.store).open();
     };
 
     // 1. Сводка дня
@@ -1502,10 +1654,7 @@ module.exports = class LifeTracker extends Plugin {
           cb.checked = !!l.done;
           cb.onchange = act(() => { l.done = cb.checked; });
           row.createEl('span', { cls: 'lt-touch-name', text: h.name });
-          const step = row.createDiv({ cls: 'lt-touch-step' });
-          bigBtn(step, '−', () => { l.hours = Math.max(0, (+l.hours || 0) - 0.25); });
-          step.createEl('span', { cls: 'lt-touch-val', text: fmtH(l.hours || 0) });
-          bigBtn(step, '+', () => { l.hours = (+l.hours || 0) + 0.25; });
+          // Убрали поле ввода часов из интерактивной панели - часы теперь в навыках
         }
 
         if (ref.substances.length) {
@@ -1526,10 +1675,20 @@ module.exports = class LifeTracker extends Plugin {
             const l = day.activityLogs.find(x => x.activityId === a.id);
             const row = touch.createDiv({ cls: 'lt-touch-row' });
             row.createEl('span', { cls: 'lt-touch-name', text: a.name });
-            const step = row.createDiv({ cls: 'lt-touch-step' });
-            bigBtn(step, '−', () => { l.amount = Math.max(0, (+l.amount || 0) - 1); });
-            step.createEl('span', { cls: 'lt-touch-val', text: String(+l.amount || 0) });
-            bigBtn(step, '+', () => { l.amount = (+l.amount || 0) + 1; });
+            // Заменили input на кнопки +/- для избежания скролла на iOS
+            const btnMinus = row.createEl('button', { text: '−', cls: 'lt-big-btn', style: 'width:36px;height:36px;font-size:18px;' });
+            btnMinus.onclick = act(() => { 
+              l.amount = Math.max(0, (+l.amount || 0) - 1); 
+              row.querySelector('.lt-touch-val').textContent = l.amount;
+              row.querySelector('.lt-touch-sub').textContent = `−${Math.round(a.kcalPerUnit * l.amount)} ккал`;
+            });
+            const valSpan = row.createEl('span', { cls: 'lt-touch-val', text: String(+l.amount || 0), style: 'min-width:40px;text-align:center;' });
+            const btnPlus = row.createEl('button', { text: '+', cls: 'lt-big-btn', style: 'width:36px;height:36px;font-size:18px;' });
+            btnPlus.onclick = act(() => { 
+              l.amount = (+l.amount || 0) + 1; 
+              valSpan.textContent = l.amount;
+              row.querySelector('.lt-touch-sub').textContent = `−${Math.round(a.kcalPerUnit * l.amount)} ккал`;
+            });
             row.createEl('span', { cls: 'lt-touch-sub', text: `−${Math.round(a.kcalPerUnit * (+l.amount || 0))} ккал` });
           }
         }

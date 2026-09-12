@@ -21,6 +21,53 @@ pre.block-language-lifetracker-day,
 .lt-meal input { width: 70px; }
 .lt-comment { width: 100%; min-height: 60px; }
 .lt-footer { position: sticky; bottom: 0; background: var(--background-primary); padding: 8px 0; font-weight: 600; border-top: 2px solid var(--interactive-accent); margin-top: 12px; }
+
+/* Фиксация кнопок действий вверху модального окна для iOS */
+.lt-actions-bar { 
+  position: sticky; 
+  top: 0; 
+  background: var(--background-primary); 
+  padding: 8px 0; 
+  z-index: 100; 
+  border-bottom: 2px solid var(--interactive-accent);
+  margin-bottom: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lt-actions-bar button { 
+  height: 40px; 
+  font-size: 14px; 
+  padding: 0 16px; 
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* Адаптация для мобильных устройств */
+@media (max-width: 600px) {
+  .lt-actions-bar {
+    position: sticky;
+    top: 0;
+    background: var(--background-primary);
+    padding: 10px 0;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .lt-actions-bar button {
+    flex: 1;
+    min-width: 120px;
+    height: 44px;
+    font-size: 15px;
+  }
+  /* Увеличиваем размеры интерактивных элементов для iOS */
+  .lt button, .lt input, .lt select, .lt textarea {
+    min-height: 44px;
+    font-size: 16px; /* Предотвращает зум на iOS */
+  }
+  .lt-modal-content {
+    padding-bottom: 20px;
+  }
+}
 .lt-week { width: 100%; border-collapse: collapse; font-size: 13px; }
 .lt-week td, .lt-week th { border: 1px solid var(--background-modifier-border); padding: 4px 6px; text-align: center; }
 .lt-week td:first-child, .lt-week th:first-child { text-align: left; }
@@ -82,6 +129,7 @@ pre.block-language-lifetracker-day,
 .lt-wide-btn { width: auto; padding: 0 16px; font-size: 15px; }
 .lt-touch-step { display: flex; align-items: center; gap: 6px; }
 .lt-touch-val { min-width: 56px; text-align: center; font-size: 16px; font-weight: 700; color: var(--interactive-accent); }
+.lt-touch-input { width: 80px; height: 40px; font-size: 16px; text-align: center; border-radius: 8px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
 .lt-touch-sub { font-size: 12px; color: var(--text-muted); }
 .lt-touch-meals { display: flex; gap: 10px; flex-wrap: wrap; }
 .lt-touch-meal { display: flex; align-items: center; gap: 6px; font-weight: 700; }
@@ -114,3 +162,6 @@ pre.block-language-lifetracker-day,
 /* Заблокированные элементы (требование характеристики) */
 .lt-locked { opacity: 0.5; color: var(--text-muted); }
 .lt-notice { background: var(--background-secondary); border-left: 3px solid var(--interactive-accent); padding: 8px 12px; margin: 8px 0; border-radius: 4px; font-size: 13px; }
+
+/* Описание трофея */
+.lt-description { font-size: 12px; color: var(--text-muted); font-style: italic; margin-top: 2px; width: 100%; }
