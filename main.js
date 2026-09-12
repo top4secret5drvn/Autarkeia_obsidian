@@ -670,6 +670,9 @@ class DayModal extends Modal {
     // Верхняя панель действий (для iOS - всегда видима)
     const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
     actionsBar.createEl('span', { text: `📅 ${date} · ${WD[(parseISO(date).getDay() + 6) % 7]}`, style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    const saveBtnTop = actionsBar.createEl('button', { text: '💾 Сохранить', cls: 'mod-cta' });
+    saveBtnTop.style.marginLeft = '8px';
+    saveBtnTop.onclick = async () => { await store.saveDay(date); new Notice('Сохранено ✓'); };
     actionsBar.createEl('button', { text: 'Готово ✓', cls: 'mod-cta' }).onclick = async () => { await store.saveDay(date); this.close(); };
     
     el.createEl('h2', { text: 'Трекер дня', style: 'margin-top: 8px;' });
@@ -694,16 +697,8 @@ class DayModal extends Modal {
       cb.addEventListener('change', () => { l.done = cb.checked; refresh(); });
       row.createEl('span', { cls: 'lt-name', text: h.name });
       row.createEl('span', { cls: 'lt-chip', text: fmtStats(h.baseEffects) });
-      const hrsInput = row.createEl('input', { type: 'number', cls: 'lt-input', attr: { inputmode: 'decimal', min: '0', step: '0.25' } });
-      hrsInput.value = fmtH(l.hours || 0).replace('ч', '').trim();
+      // Убрали поле ввода часов из модального окна дня - часы теперь в навыках
       const sk = row.createEl('span', { cls: 'lt-chip' });
-      const updHours = () => {
-        const val = Math.max(0, +hrsInput.value || 0);
-        l.hours = val;
-        habitStreak(store, h.id, date).then(n => sk.setText(n ? `🔥${n}` : ''));
-        refresh();
-      };
-      hrsInput.addEventListener('input', updHours);
       habitStreak(store, h.id, date).then(n => sk.setText(n ? `🔥${n}` : ''));
     }
 
@@ -904,6 +899,7 @@ class RefModal extends Modal {
     // Верхняя панель действий для iOS
     const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
     actionsBar.createEl('span', { text: '📚 Справочники', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    actionsBar.createEl('button', { text: '💾 Сохранить', cls: 'mod-cta' }).onclick = async () => { await this.store.saveRef(); new Notice('Справочники сохранены ✓'); };
     
     el.createEl('h2', { text: 'Управление справочниками', style: 'margin-top: 8px;' });
     const cols = [
@@ -1386,7 +1382,12 @@ class RewardsModal extends Modal {
     typeSelect.createEl('option', { value: REWARD_TYPES.ACCESSORY, text: '📿 Аксессуар (часы, кольцо, браслет...)' });
     typeSelect.createEl('option', { value: REWARD_TYPES.DECOR, text: '🏺 Декор (статуэтка, картина, грамота...)' });
     
-    addForm.createEl('button', { text: 'Создать трофей', cls: 'mod-cta' }).onclick = async () => {
+    // Верхняя кнопка сохранения для iOS
+    const topSaveBtn = addForm.createEl('button', { text: '💾 Создать трофей', cls: 'mod-cta' });
+    topSaveBtn.style.marginBottom = '8px';
+    topSaveBtn.style.width = '100%';
+    
+    const createTrophy = async () => {
       if (!nameInput.value.trim()) {
         new Notice('Введите название трофея');
         return;
@@ -1413,6 +1414,9 @@ class RewardsModal extends Modal {
       this.close();
       new RewardsModal(this.app, this.store).open();
     };
+    
+    topSaveBtn.onclick = createTrophy;
+    addForm.createEl('button', { text: 'Создать трофей', cls: 'mod-cta' }).onclick = createTrophy;
   }
 }
 
@@ -1650,9 +1654,7 @@ module.exports = class LifeTracker extends Plugin {
           cb.checked = !!l.done;
           cb.onchange = act(() => { l.done = cb.checked; });
           row.createEl('span', { cls: 'lt-touch-name', text: h.name });
-          const hrsInput = row.createEl('input', { type: 'number', cls: 'lt-touch-input', attr: { inputmode: 'decimal', min: '0', step: '0.25', placeholder: 'часы' } });
-          hrsInput.value = String(+l.hours || 0);
-          hrsInput.oninput = act(() => { l.hours = Math.max(0, +hrsInput.value || 0); });
+          // Убрали поле ввода часов из интерактивной панели - часы теперь в навыках
         }
 
         if (ref.substances.length) {
@@ -1673,9 +1675,20 @@ module.exports = class LifeTracker extends Plugin {
             const l = day.activityLogs.find(x => x.activityId === a.id);
             const row = touch.createDiv({ cls: 'lt-touch-row' });
             row.createEl('span', { cls: 'lt-touch-name', text: a.name });
-            const amtInput = row.createEl('input', { type: 'number', cls: 'lt-touch-input', attr: { inputmode: 'numeric', min: '0', step: '1', placeholder: 'кол-во' } });
-            amtInput.value = String(+l.amount || 0);
-            amtInput.oninput = act(() => { l.amount = Math.max(0, +amtInput.value || 0); });
+            // Заменили input на кнопки +/- для избежания скролла на iOS
+            const btnMinus = row.createEl('button', { text: '−', cls: 'lt-big-btn', style: 'width:36px;height:36px;font-size:18px;' });
+            btnMinus.onclick = act(() => { 
+              l.amount = Math.max(0, (+l.amount || 0) - 1); 
+              row.querySelector('.lt-touch-val').textContent = l.amount;
+              row.querySelector('.lt-touch-sub').textContent = `−${Math.round(a.kcalPerUnit * l.amount)} ккал`;
+            });
+            const valSpan = row.createEl('span', { cls: 'lt-touch-val', text: String(+l.amount || 0), style: 'min-width:40px;text-align:center;' });
+            const btnPlus = row.createEl('button', { text: '+', cls: 'lt-big-btn', style: 'width:36px;height:36px;font-size:18px;' });
+            btnPlus.onclick = act(() => { 
+              l.amount = (+l.amount || 0) + 1; 
+              valSpan.textContent = l.amount;
+              row.querySelector('.lt-touch-sub').textContent = `−${Math.round(a.kcalPerUnit * l.amount)} ккал`;
+            });
             row.createEl('span', { cls: 'lt-touch-sub', text: `−${Math.round(a.kcalPerUnit * (+l.amount || 0))} ккал` });
           }
         }
