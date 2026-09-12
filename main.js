@@ -195,23 +195,21 @@ const REWARD_TYPES = {
 
 /* ---------- Конфигурация прогрессии по умолчанию ---------- */
 const DEFAULT_LEVELING_CONFIG = {
-  baseXP: 150,          // Базовый опыт для уровня 1 (тяжелее)
-  growthFactor: 2.0,    // Коэффициент роста (2.0 = очень тяжелая прогрессия)
+  baseXP: 100,          // Базовый опыт для уровня 1
+  growthFactor: 1.5,    // Коэффициент роста (1.5 = средняя прогрессия)
   formula: 'quadratic', // 'linear', 'quadratic', 'exponential'
-  gloryPerLevel: 50     // Очки славы за каждый уровень
+  gloryPerLevel: 1      // Очки славы за каждый уровень (теперь 1)
 };
 
 /* ---------- Структура наград по умолчанию ---------- */
 const DEFAULT_REWARDS_DATA = {
   currency: 0,          // Очки славы (валюта за уровни)
   inventory: [],        // Разблокированные награды [{id, type, name, unlockedAt}]
-  slots: {
-    accessory: null,    // Текущий носимый аксессуар {id, name}
-    decor: null         // Текущий декор {id, name}
-  },
+  slots: [],            // Слоты для трофеев [{id, trophyId, trophyName, type}]
   titles: [],           // Разблокированные титулы характеристик [{stat, level, title}]
   accesses: [],         // Разблокированные доступы к испытаниям [{id, name}]
-  lastProcessedLevel: 0 // Последний обработанный уровень для начисления наград
+  lastProcessedLevel: 0,// Последний обработанный уровень для начисления наград
+  unlockedSlots: 0      // Количество разблокированных слотов (равно уровню игрока)
 };
 
 /* ---------- XP за действия ---------- */
@@ -597,27 +595,19 @@ async function checkAndGrantLevelRewards(store) {
   // Проверяем все уровни от lastProcessedLevel до текущего
   let grantedGlory = 0;
   for (let lvl = rewardsData.lastProcessedLevel + 1; lvl <= progress.level; lvl++) {
-    // Начисляем очки славы за уровень
+    // Начисляем 1 очко славы за уровень
     grantedGlory += cfg.gloryPerLevel;
     
-    // Создаем универсальную награду за уровень
-    const rewardId = `level_${lvl}`;
-    if (!rewardsData.inventory.find(r => r.id === rewardId)) {
-      rewardsData.inventory.push({
-        id: rewardId,
-        type: REWARD_TYPES.DECOR,
-        name: `Награда за уровень ${lvl}`,
-        unlockedAt: iso(new Date())
-      });
-    }
+    // Разблокируем один слот за уровень
+    rewardsData.unlockedSlots = Math.max(rewardsData.unlockedSlots, lvl);
   }
   
   // Начисляем очки славы
-  if (grantedGlory > 0) {
+  if (grantedGlory > 0 || rewardsData.unlockedSlots > 0) {
     rewardsData.currency += grantedGlory;
     rewardsData.lastProcessedLevel = progress.level;
     await store.saveRewards();
-    return { grantedGlory, newLevel: progress.level };
+    return { grantedGlory, newLevel: progress.level, unlockedSlots: rewardsData.unlockedSlots };
   }
   
   return null;
@@ -1202,7 +1192,7 @@ class RewardsModal extends Modal {
     levelSection.createEl('button', { text: '🔄 Проверить награды', cls: 'mod-cta' }).onclick = async () => {
       const result = await checkAndGrantLevelRewards(this.store);
       if (result) {
-        new Notice(`Получено ${result.grantedGlory} очков славы! Уровень: ${result.newLevel}`);
+        new Notice(`Получено ${result.grantedGlory} очк. славы! Слоты: ${result.unlockedSlots}`);
         this.close();
         new RewardsModal(this.app, this.store).open();
       } else {
@@ -1227,33 +1217,43 @@ class RewardsModal extends Modal {
     const currencyRow = el.createDiv({ cls: 'lt-rewards-currency' });
     currencyRow.createEl('span', { text: `Доступно: ${rewardsData.currency} 🪙` });
     
-    // Секция 4: Инвентарь наград с кнопками экипировки
-    el.createEl('h3', { text: '🎒 Инвентарь' });
+    // Секция 4: Инвентарь трофеев (купили -> можно поместить в слот)
+    el.createEl('h3', { text: '🎒 Инвентарь трофеев' });
     if (rewardsData.inventory.length === 0) {
-      el.createEl('p', { text: 'Пока нет наград. Выполняйте задачи и повышайте уровень!' });
+      el.createEl('p', { text: 'Пока нет трофеев. Создайте трофей за очки славы!' });
     } else {
-      for (const reward of rewardsData.inventory) {
+      for (const trophy of rewardsData.inventory) {
         const row = el.createDiv({ cls: 'lt-row' });
-        const icon = reward.type === REWARD_TYPES.ACCESSORY ? '📿' : reward.type === REWARD_TYPES.DECOR ? '🏺' : '📜';
-        row.createEl('span', { text: `${icon} ${reward.name}` });
+        const icon = trophy.type === REWARD_TYPES.ACCESSORY ? '📿' : trophy.type === REWARD_TYPES.DECOR ? '🏺' : '📜';
+        row.createEl('span', { text: `${icon} ${trophy.name}` });
         
-        // Кнопки управления
+        // Проверяем, экипирован ли этот трофей в какой-либо слот
+        const equippedSlot = rewardsData.slots.find(s => s.trophyId === trophy.id);
         const actions = row.createDiv({ cls: 'lt-actions' });
         
-        if (reward.type === REWARD_TYPES.ACCESSORY || reward.type === REWARD_TYPES.DECOR) {
-          const slotType = reward.type === REWARD_TYPES.ACCESSORY ? 'accessory' : 'decor';
-          const isEquipped = rewardsData.slots[slotType] && rewardsData.slots[slotType].id === reward.id;
-          
-          if (isEquipped) {
+        if (trophy.type === REWARD_TYPES.ACCESSORY || trophy.type === REWARD_TYPES.DECOR) {
+          if (equippedSlot) {
             actions.createEl('button', { text: 'Снять', cls: 'mod-warning' }).onclick = async () => {
-              rewardsData.slots[slotType] = null;
+              rewardsData.slots = rewardsData.slots.filter(s => s.trophyId !== trophy.id);
               await this.store.saveRewards();
               this.close();
               new RewardsModal(this.app, this.store).open();
             };
           } else {
-            actions.createEl('button', { text: 'Экипировать', cls: 'mod-cta' }).onclick = async () => {
-              rewardsData.slots[slotType] = { id: reward.id, name: reward.name };
+            actions.createEl('button', { text: 'Надеть', cls: 'mod-cta' }).onclick = async () => {
+              // Проверяем, есть ли свободный слот для этого типа
+              const slotType = trophy.type;
+              const occupiedCount = rewardsData.slots.filter(s => s.type === slotType).length;
+              if (occupiedCount >= rewardsData.unlockedSlots) {
+                new Notice('Нет свободных слотов! Повышайте уровень.');
+                return;
+              }
+              rewardsData.slots.push({ 
+                id: 'slot_' + Date.now(), 
+                trophyId: trophy.id, 
+                trophyName: trophy.name, 
+                type: slotType 
+              });
               await this.store.saveRewards();
               this.close();
               new RewardsModal(this.app, this.store).open();
@@ -1261,45 +1261,49 @@ class RewardsModal extends Modal {
           }
         }
         
-        row.createEl('span', { cls: 'lt-chip', text: new Date(reward.unlockedAt).toLocaleDateString() });
+        row.createEl('span', { cls: 'lt-chip', text: new Date(trophy.unlockedAt).toLocaleDateString() });
       }
     }
     
     // Секция 5: Активные слоты
-    el.createEl('h3', { text: '🎯 Активные слоты' });
-    const slotsRow = el.createDiv({ cls: 'lt-row' });
-    slotsRow.createEl('span', { text: `Аксессуар: ${rewardsData.slots.accessory ? rewardsData.slots.accessory.name : '—'}` });
-    slotsRow.createEl('span', { text: `Декор: ${rewardsData.slots.decor ? rewardsData.slots.decor.name : '—'}` });
+    el.createEl('h3', { text: `🎯 Слоты для трофеев (${rewardsData.slots.length}/${rewardsData.unlockedSlots})` });
+    if (rewardsData.slots.length === 0) {
+      el.createEl('p', { text: 'Нет экипированных трофеев' });
+    } else {
+      for (const slot of rewardsData.slots) {
+        const slotRow = el.createDiv({ cls: 'lt-row' });
+        const icon = slot.type === REWARD_TYPES.ACCESSORY ? '📿' : '🏺';
+        slotRow.createEl('span', { text: `${icon} Слот: ${slot.trophyName || 'Пустой'}` });
+      }
+    }
     
-    // Кнопка добавления пользовательской награды
-    el.createEl('h3', { text: '➕ Добавить награду' });
+    // Кнопка создания трофея (тратим 1 очко славы)
+    el.createEl('h3', { text: '➕ Создать трофей (1 🪙)' });
     const addForm = el.createDiv({ cls: 'lt-form' });
-    const nameInput = addForm.createEl('input', { type: 'text', placeholder: 'Название награды', cls: 'lt-big-input' });
+    const nameInput = addForm.createEl('input', { type: 'text', placeholder: 'Название трофея (реальный предмет)', cls: 'lt-big-input' });
     const typeSelect = addForm.createEl('select', { cls: 'lt-big-select' });
-    typeSelect.createEl('option', { value: REWARD_TYPES.ACCESSORY, text: '📿 Аксессуар' });
-    typeSelect.createEl('option', { value: REWARD_TYPES.DECOR, text: '🏺 Декор' });
-    typeSelect.createEl('option', { value: REWARD_TYPES.TITLE, text: '📜 Титул' });
-    typeSelect.createEl('option', { value: REWARD_TYPES.ACCESS, text: '🔓 Доступ' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.ACCESSORY, text: '📿 Аксессуар (часы, кольцо, браслет...)' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.DECOR, text: '🏺 Декор (статуэтка, картина, грамота...)' });
     
-    addForm.createEl('button', { text: 'Добавить награду (10 🪙)', cls: 'mod-cta' }).onclick = async () => {
+    addForm.createEl('button', { text: 'Создать трофей', cls: 'mod-cta' }).onclick = async () => {
       if (!nameInput.value.trim()) {
-        new Notice('Введите название награды');
+        new Notice('Введите название трофея');
         return;
       }
-      if (rewardsData.currency < 10) {
-        new Notice('Недостаточно очков славы');
+      if (rewardsData.currency < 1) {
+        new Notice('Недостаточно очков славы (нужно 1 🪙)');
         return;
       }
       
       rewardsData.inventory.push({
-        id: 'custom_' + Date.now(),
+        id: 'trophy_' + Date.now(),
         type: typeSelect.value,
         name: nameInput.value.trim(),
         unlockedAt: iso(new Date())
       });
-      rewardsData.currency -= 10;
+      rewardsData.currency -= 1;
       await this.store.saveRewards();
-      new Notice('Награда добавлена!');
+      new Notice('Трофей создан!');
       this.close();
       new RewardsModal(this.app, this.store).open();
     };
@@ -1333,6 +1337,26 @@ class DashboardModal extends Modal {
     // Добавим кнопку для просмотра наград
     el.createEl('button', { text: '🏆 Награды и титулы', cls: 'mod-cta' }).onclick = () => { 
       new RewardsModal(this.app, this.store).open(); 
+    };
+    
+    // Настройки прогрессии уровней
+    el.createEl('h3', { text: '⚙️ Настройки прогрессии' });
+    const configForm = el.createDiv({ cls: 'lt-form' });
+    const formulaSelect = configForm.createEl('select', { cls: 'lt-big-select' });
+    formulaSelect.createEl('option', { value: 'linear', text: 'Линейная (легко)', selected: DEFAULT_LEVELING_CONFIG.formula === 'linear' });
+    formulaSelect.createEl('option', { value: 'quadratic', text: 'Квадратичная (средне)', selected: DEFAULT_LEVELING_CONFIG.formula === 'quadratic' });
+    formulaSelect.createEl('option', { value: 'exponential', text: 'Экспоненциальная (сложно)', selected: DEFAULT_LEVELING_CONFIG.formula === 'exponential' });
+    
+    const baseXPInput = configForm.createEl('input', { type: 'number', placeholder: 'Базовый XP', value: DEFAULT_LEVELING_CONFIG.baseXP, cls: 'lt-big-input' });
+    const growthInput = configForm.createEl('input', { type: 'number', placeholder: 'Коэф. роста', value: DEFAULT_LEVELING_CONFIG.growthFactor, step: '0.1', cls: 'lt-big-input' });
+    
+    configForm.createEl('button', { text: 'Применить настройки', cls: 'mod-cta' }).onclick = async () => {
+      DEFAULT_LEVELING_CONFIG.formula = formulaSelect.value;
+      DEFAULT_LEVELING_CONFIG.baseXP = parseInt(baseXPInput.value) || 100;
+      DEFAULT_LEVELING_CONFIG.growthFactor = parseFloat(growthInput.value) || 1.5;
+      new Notice(`Прогрессия обновлена: ${formulaSelect.value}, база ${DEFAULT_LEVELING_CONFIG.baseXP} XP`);
+      this.close();
+      new DashboardModal(this.app, this.store).open();
     };
 
     // 1. Сводка дня
