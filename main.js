@@ -524,7 +524,7 @@ async function goalProgress(store, g, today) {
   let sum = 0;
   for (const d of (await store.listDays()).filter(x => x >= from && x <= to)) {
     const day = await store.loadDay(d);
-    if (g.metric === 'hours') {
+    if (g.targetType === 'skill') {
       const sk = store.ref.skills.find(s => s.id === g.targetId);
       if (sk) for (const hr of sk.habitRefs || []) { const l = day.habitLogs.find(x => x.habitId === hr.habitId); if (l && l.hours) sum += l.hours * (hr.weight ?? 1); }
     } else for (const l of day.activityLogs) if (l.activityId === g.targetId) sum += +l.amount || 0;
@@ -666,7 +666,13 @@ class DayModal extends Modal {
   async onOpen() {
     const { store, date } = this, ref = store.ref, day = await store.loadDay(date);
     const el = this.contentEl; el.addClass('lt');
-    el.createEl('h2', { text: `День · ${date} · ${WD[(parseISO(date).getDay() + 6) % 7]}` });
+    
+    // Верхняя панель действий (для iOS - всегда видима)
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: `📅 ${date} · ${WD[(parseISO(date).getDay() + 6) % 7]}`, style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    actionsBar.createEl('button', { text: 'Готово ✓', cls: 'mod-cta' }).onclick = async () => { await store.saveDay(date); this.close(); };
+    
+    el.createEl('h2', { text: 'Трекер дня', style: 'margin-top: 8px;' });
     const footer = el.createDiv({ cls: 'lt-footer' });
     const footerText = () => {
       const r = computeDayStats(ref, day), k = dayKcal(ref, day), f = dayFinance(ref, day), c = dayCompletion(ref, day);
@@ -688,11 +694,16 @@ class DayModal extends Modal {
       cb.addEventListener('change', () => { l.done = cb.checked; refresh(); });
       row.createEl('span', { cls: 'lt-name', text: h.name });
       row.createEl('span', { cls: 'lt-chip', text: fmtStats(h.baseEffects) });
-      const st = row.createDiv({ cls: 'lt-step' });
-      const hrs = st.createEl('span', { text: fmtH(l.hours || 0) });
-      st.createEl('button', { text: '−' }).onclick = () => { l.hours = Math.max(0, (+l.hours || 0) - 0.25); hrs.setText(fmtH(l.hours)); refresh(); };
-      st.createEl('button', { text: '+' }).onclick = () => { l.hours = (+l.hours || 0) + 0.25; hrs.setText(fmtH(l.hours)); refresh(); };
+      const hrsInput = row.createEl('input', { type: 'number', cls: 'lt-input', attr: { inputmode: 'decimal', min: '0', step: '0.25' } });
+      hrsInput.value = fmtH(l.hours || 0).replace('ч', '').trim();
       const sk = row.createEl('span', { cls: 'lt-chip' });
+      const updHours = () => {
+        const val = Math.max(0, +hrsInput.value || 0);
+        l.hours = val;
+        habitStreak(store, h.id, date).then(n => sk.setText(n ? `🔥${n}` : ''));
+        refresh();
+      };
+      hrsInput.addEventListener('input', updHours);
       habitStreak(store, h.id, date).then(n => sk.setText(n ? `🔥${n}` : ''));
     }
 
@@ -710,12 +721,16 @@ class DayModal extends Modal {
       const l = day.activityLogs.find(x => x.activityId === a.id);
       const row = el.createDiv({ cls: 'lt-row' });
       row.createEl('span', { cls: 'lt-name', text: a.name });
-      const st = row.createDiv({ cls: 'lt-step' });
-      const amt = st.createEl('span', { text: String(+l.amount || 0) });
+      const inp = row.createEl('input', { type: 'number', cls: 'lt-input', attr: { inputmode: 'numeric', min: '0', step: '1' } });
+      inp.value = String(+l.amount || 0);
       const kc = row.createEl('span', { cls: 'lt-chip' });
-      const upd = () => { amt.setText(String(l.amount)); kc.setText(`−${Math.round(a.kcalPerUnit * l.amount)} ккал`); refresh(); };
-      st.createEl('button', { text: '−' }).onclick = () => { l.amount = Math.max(0, (+l.amount || 0) - 1); upd(); };
-      st.createEl('button', { text: '+' }).onclick = () => { l.amount = (+l.amount || 0) + 1; upd(); };
+      const upd = () => { 
+        const val = Math.max(0, +inp.value || 0);
+        l.amount = val;
+        kc.setText(`−${Math.round(a.kcalPerUnit * l.amount)} ккал`); 
+        refresh(); 
+      };
+      inp.addEventListener('input', upd);
       kc.setText(`−${Math.round(a.kcalPerUnit * (+l.amount || 0))} ккал`);
     }
 
@@ -773,7 +788,7 @@ class DayModal extends Modal {
     ta.addEventListener('input', () => { day.comment = ta.value; save(); });
 
     footer.setText(footerText());
-    el.createEl('button', { text: 'Готово ✓', cls: 'mod-cta' }).onclick = async () => { await store.saveDay(date); this.close(); };
+    // Кнопка внизу остаётся для удобства, но основная уже вверху
   }
 }
 
@@ -782,10 +797,15 @@ class WeekModal extends Modal {
   constructor(app, store, date) { super(app); this.store = store; this.date = date; }
   async onOpen() {
     const { store } = this, ref = store.ref, el = this.contentEl; el.addClass('lt');
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: `📅 Неделя · ${this.date}`, style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    
     const mon = mondayOf(parseISO(this.date)), today = iso(new Date());
     const days = [];
     for (let i = 0; i < 7; i++) { const d = iso(addDays(mon, i)); days.push({ d, future: d > today, day: d <= today ? await store.loadDay(d) : null }); }
-    el.createEl('h2', { text: `Неделя · ${days[0].d} — ${days[6].d}` });
+    el.createEl('h2', { text: 'Обзор недели', style: 'margin-top: 8px;' });
     const wc = await weekCompletion(store, ref, today);
     el.createDiv({ cls: 'lt-big' }).createEl('span', { text: `🎯 Итог недели: ${wc.pct}% (${wc.done}/${wc.total})` });
 
@@ -880,7 +900,12 @@ class RefModal extends Modal {
   onOpen() { this.render(); }
   async render() {
     const ref = this.store.ref, el = this.contentEl; el.empty(); el.addClass('lt');
-    el.createEl('h2', { text: 'Справочники' });
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: '📚 Справочники', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    
+    el.createEl('h2', { text: 'Управление справочниками', style: 'margin-top: 8px;' });
     const cols = [
       ['habits', 'Привычки', h => h.name],
       ['activities', 'Активности', a => a.name],
@@ -1019,31 +1044,11 @@ class EditModal extends Modal {
   onOpen() {
     const el = this.contentEl; el.addClass('lt');
     const it = this.item;
-    el.createEl('h2', { text: (this.isNew ? 'Новая · ' : 'Правка · ') + TITLES[this.collKey] });
-    const F = new FormBuilder(el, it, this.store);
-    switch (this.collKey) {
-      case 'habits': F.text('name', 'Название'); F.stats('baseEffects', 'Эффекты за выполнение'); break;
-      case 'activities': F.text('name', 'Название'); F.num('kcalPerUnit', 'ккал за единицу'); break;
-      case 'substances': F.text('name', 'Название'); break;
-      case 'skills': F.text('name', 'Название'); F.text('description', 'Описание'); F.refs('habitRefs'); break;
-      case 'synergyRules': F.endpoint('source', 'Условие 1'); F.endpoint('target', 'Условие 2'); F.stats('bonus', 'Бонус, если оба в один день'); break;
-      case 'goals': {
-        F.text('name', 'Название');
-        let refill = null;
-        F.select('targetType', 'Тип цели', [['activity', 'активность'], ['skill', 'навык']], () => refill && refill());
-        F.refSelect('targetId', 'Объект', () => it.targetType === 'skill' ? 'skills' : 'activities', f => { refill = f; });
-        F.select('metric', 'Метрика', [['km', 'км'], ['count', 'кол-во'], ['hours', 'часы']]);
-        F.num('targetValue', 'Целевое значение');
-        F.date('start', 'Начало'); F.date('end', 'Конец (опц.)');
-        F.select('status', 'Статус', [['active', 'активна'], ['achieved', 'выполнена'], ['failed', 'провалена'], ['cancelled', 'отменена']]);
-        break;
-      }
-      case 'finCategories':
-        F.text('name', 'Название');
-        F.select('type', 'Тип', [['income', '↓ доход'], ['expense', '↑ расход']]);
-        break;
-    }
-    el.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: (this.isNew ? 'Новая · ' : 'Правка · ') + TITLES[this.collKey], style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    actionsBar.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
       if (this.collKey !== 'synergyRules' && !it.name) { new Notice('Нужно название'); return; }
       if (this.collKey === 'synergyRules' && (!it.source.id || !it.target.id)) { new Notice('Выбери оба конца синергии'); return; }
       if (this.collKey === 'goals' && it.status === 'achieved') {
@@ -1059,6 +1064,32 @@ class EditModal extends Modal {
       await this.store.saveRef();
       this.onSaved(); this.close();
     };
+    
+    el.createEl('h2', { text: 'Редактирование', style: 'margin-top: 8px;' });
+    const F = new FormBuilder(el, it, this.store);
+    switch (this.collKey) {
+      case 'habits': F.text('name', 'Название'); F.stats('baseEffects', 'Эффекты за выполнение'); break;
+      case 'activities': F.text('name', 'Название'); F.num('kcalPerUnit', 'ккал за единицу'); break;
+      case 'substances': F.text('name', 'Название'); break;
+      case 'skills': F.text('name', 'Название'); F.text('description', 'Описание'); F.refs('habitRefs'); break;
+      case 'synergyRules': F.endpoint('source', 'Условие 1'); F.endpoint('target', 'Условие 2'); F.stats('bonus', 'Бонус, если оба в один день'); break;
+      case 'goals': {
+        F.text('name', 'Название');
+        let refill = null;
+        F.select('targetType', 'Тип цели', [['activity', 'активность'], ['skill', 'навык']], () => refill && refill());
+        F.refSelect('targetId', 'Объект', () => it.targetType === 'skill' ? 'skills' : 'activities', f => { refill = f; });
+        F.select('metric', 'Метрика', [['km', 'км'], ['count', 'кол-во']]);
+        F.num('targetValue', 'Целевое значение');
+        F.date('start', 'Начало'); F.date('end', 'Конец (опц.)');
+        F.select('status', 'Статус', [['active', 'активна'], ['achieved', 'выполнена'], ['failed', 'провалена'], ['cancelled', 'отменена']]);
+        break;
+      }
+      case 'finCategories':
+        F.text('name', 'Название');
+        F.select('type', 'Тип', [['income', '↓ доход'], ['expense', '↑ расход']]);
+        break;
+    }
+    // Кнопка внизу остаётся для удобства, но основная уже вверху
   }
 }
 
@@ -1067,17 +1098,23 @@ class AchievementEditModal extends Modal {
   constructor(app, store, onSaved) { super(app); this.store = store; this.onSaved = onSaved; this.item = { id: uid('ach'), title: '', description: '', date: iso(new Date()) }; }
   onOpen() {
     const el = this.contentEl; el.addClass('lt');
-    el.createEl('h2', { text: 'Новое достижение' });
-    const F = new FormBuilder(el, this.item, this.store);
-    F.text('title', 'Название');
-    F.text('description', 'Описание');
-    F.date('date', 'Дата получения');
-    el.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: '🏆 Новое достижение', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    actionsBar.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
       if (!this.item.title) { new Notice('Нужно название'); return; }
       this.store.ref.achievements.push(this.item);
       await this.store.saveRef();
       this.onSaved(); this.close();
     };
+    
+    el.createEl('h2', { text: 'Достижение', style: 'margin-top: 8px;' });
+    const F = new FormBuilder(el, this.item, this.store);
+    F.text('title', 'Название');
+    F.text('description', 'Описание');
+    F.date('date', 'Дата получения');
+    // Кнопка внизу остаётся для удобства, но основная уже вверху
   }
 }
 
@@ -1087,7 +1124,12 @@ class WorkItemsModal extends Modal {
   onOpen() { this.render(); }
   render() {
     const el = this.contentEl; el.empty(); el.addClass('lt');
-    el.createEl('h2', { text: '📋 Дела и идеи' });
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: '📋 Дела и идеи', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    
+    el.createEl('h2', { text: 'Управление задачами', style: 'margin-top: 8px;' });
     const tabs = el.createDiv({ cls: 'lt-tabs' });
     const kinds = [['all', 'Все'], ['task', 'Дела'], ['idea', 'Идеи'], ['done', 'Выполненные']];
     let curKind = 'all';
@@ -1148,7 +1190,20 @@ class WorkItemEditModal extends Modal {
   }
   onOpen() {
     const el = this.contentEl; el.addClass('lt');
-    el.createEl('h2', { text: (this.isNew ? 'Новый' : 'Правка') + ' · ' + (this.item.kind === 'task' ? 'Дело' : 'Идея') });
+    
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: (this.isNew ? 'Новый' : 'Правка') + ' · ' + (this.item.kind === 'task' ? 'Дело' : 'Идея'), style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    actionsBar.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
+      if (!this.item.name) { new Notice('Нужно название'); return; }
+      if (this.item.status === 'done' && !this.item.doneAt) this.item.doneAt = iso(new Date());
+      if (this.isNew) this.store.work.items.push(this.item);
+      else { const i = this.store.work.items.findIndex(x => x.id === this.item.id); if (i >= 0) this.store.work.items[i] = this.item; }
+      await this.store.saveWorkItems();
+      this.onSaved(); this.close();
+    };
+    
+    el.createEl('h2', { text: 'Редактирование', style: 'margin-top: 8px;' });
     const F = new FormBuilder(el, this.item, this.store);
     F.text('name', 'Название');
     F.text('description', 'Описание');
@@ -1190,14 +1245,7 @@ class WorkItemEditModal extends Modal {
       el.createEl('div', { cls: 'lt-notice', text: `🔒 Требование: ${statLabel} >= ${this.item.minStatRequirement.threshold} (нельзя изменить)` });
     }
     
-    el.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
-      if (!this.item.name) { new Notice('Нужно название'); return; }
-      if (this.item.status === 'done' && !this.item.doneAt) this.item.doneAt = iso(new Date());
-      if (this.isNew) this.store.work.items.push(this.item);
-      else { const i = this.store.work.items.findIndex(x => x.id === this.item.id); if (i >= 0) this.store.work.items[i] = this.item; }
-      await this.store.saveWorkItems();
-      this.onSaved(); this.close();
-    };
+    // Кнопка внизу остаётся для удобства, но основная уже вверху
   }
 }
 
@@ -1222,7 +1270,11 @@ class RewardsModal extends Modal {
     // Расчет текущего уровня и XP
     const progress = await getPlayerProgress(this.store);
     
-    el.createEl('h2', { text: '🏆 Награды и титулы' });
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: '🏆 Награды и титулы', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    
+    el.createEl('h2', { text: 'Панель наград', style: 'margin-top: 8px;' });
     
     // Секция 1: Уровень игрока
     const levelSection = el.createDiv({ cls: 'lt-rewards-section' });
@@ -1373,7 +1425,11 @@ class DashboardModal extends Modal {
     const ref = this.store.ref;
     const day = await this.store.loadDay(today);
 
-    el.createEl('h2', { text: '📊 Дашборд персонажа' });
+    // Верхняя панель действий для iOS
+    const actionsBar = el.createDiv({ cls: 'lt-actions-bar' });
+    actionsBar.createEl('span', { text: '📊 Дашборд персонажа', style: 'font-weight: 700; font-size: 16px; flex: 1;' });
+    
+    el.createEl('h2', { text: 'Обзор прогресса', style: 'margin-top: 8px;' });
 
     // 0. Уровень и опыт игрока
     const progress = await getPlayerProgress(this.store);
@@ -1594,10 +1650,9 @@ module.exports = class LifeTracker extends Plugin {
           cb.checked = !!l.done;
           cb.onchange = act(() => { l.done = cb.checked; });
           row.createEl('span', { cls: 'lt-touch-name', text: h.name });
-          const step = row.createDiv({ cls: 'lt-touch-step' });
-          bigBtn(step, '−', () => { l.hours = Math.max(0, (+l.hours || 0) - 0.25); });
-          step.createEl('span', { cls: 'lt-touch-val', text: fmtH(l.hours || 0) });
-          bigBtn(step, '+', () => { l.hours = (+l.hours || 0) + 0.25; });
+          const hrsInput = row.createEl('input', { type: 'number', cls: 'lt-touch-input', attr: { inputmode: 'decimal', min: '0', step: '0.25', placeholder: 'часы' } });
+          hrsInput.value = String(+l.hours || 0);
+          hrsInput.oninput = act(() => { l.hours = Math.max(0, +hrsInput.value || 0); });
         }
 
         if (ref.substances.length) {
@@ -1618,10 +1673,9 @@ module.exports = class LifeTracker extends Plugin {
             const l = day.activityLogs.find(x => x.activityId === a.id);
             const row = touch.createDiv({ cls: 'lt-touch-row' });
             row.createEl('span', { cls: 'lt-touch-name', text: a.name });
-            const step = row.createDiv({ cls: 'lt-touch-step' });
-            bigBtn(step, '−', () => { l.amount = Math.max(0, (+l.amount || 0) - 1); });
-            step.createEl('span', { cls: 'lt-touch-val', text: String(+l.amount || 0) });
-            bigBtn(step, '+', () => { l.amount = (+l.amount || 0) + 1; });
+            const amtInput = row.createEl('input', { type: 'number', cls: 'lt-touch-input', attr: { inputmode: 'numeric', min: '0', step: '1', placeholder: 'кол-во' } });
+            amtInput.value = String(+l.amount || 0);
+            amtInput.oninput = act(() => { l.amount = Math.max(0, +amtInput.value || 0); });
             row.createEl('span', { cls: 'lt-touch-sub', text: `−${Math.round(a.kcalPerUnit * (+l.amount || 0))} ккал` });
           }
         }
