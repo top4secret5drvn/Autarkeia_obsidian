@@ -204,12 +204,13 @@ const DEFAULT_LEVELING_CONFIG = {
 /* ---------- Структура наград по умолчанию ---------- */
 const DEFAULT_REWARDS_DATA = {
   currency: 0,          // Очки славы (валюта за уровни)
-  inventory: [],        // Разблокированные награды [{id, type, name, unlockedAt}]
+  inventory: [],        // Разблокированные награды [{id, type, name, description, unlockedAt}]
   slots: [],            // Слоты для трофеев [{id, trophyId, trophyName, type}]
   titles: [],           // Разблокированные титулы характеристик [{stat, level, title}]
   accesses: [],         // Разблокированные доступы к испытаниям [{id, name}]
   lastProcessedLevel: 0,// Последний обработанный уровень для начисления наград
-  unlockedSlots: 0      // Количество разблокированных слотов (равно уровню игрока)
+  unlockedSlots: 0,     // Количество разблокированных слотов (равно уровню игрока)
+  levelingConfig: { ...DEFAULT_LEVELING_CONFIG } // Сохраняемая конфигурация прогрессии
 };
 
 /* ---------- XP за действия ---------- */
@@ -381,6 +382,10 @@ class Store {
     if (rawData.lastProcessedLevel === undefined) {
       rawData.lastProcessedLevel = 0;
     }
+    // Миграция: добавляем levelingConfig если нет
+    if (!rawData.levelingConfig) {
+      rawData.levelingConfig = { ...DEFAULT_LEVELING_CONFIG };
+    }
     // Миграция: слоты теперь объекты {id, name}
     if (typeof rawData.slots.accessory === 'string') {
       rawData.slots.accessory = rawData.slots.accessory ? { id: rawData.slots.accessory, name: rawData.slots.accessory } : null;
@@ -428,6 +433,10 @@ class Store {
       // Миграция: добавляем lastProcessedLevel если нет
       if (rawData.lastProcessedLevel === undefined) {
         rawData.lastProcessedLevel = 0;
+      }
+      // Миграция: добавляем levelingConfig если нет
+      if (!rawData.levelingConfig) {
+        rawData.levelingConfig = { ...DEFAULT_LEVELING_CONFIG };
       }
       // Миграция: слоты теперь объекты {id, name}
       if (typeof rawData.slots.accessory === 'string') {
@@ -590,7 +599,8 @@ async function getPlayerProgress(store) {
 async function checkAndGrantLevelRewards(store) {
   const progress = await getPlayerProgress(store);
   const rewardsData = store.rewardsData;
-  const cfg = DEFAULT_LEVELING_CONFIG;
+  // Используем сохранённую конфигурацию, а не дефолтную
+  const cfg = rewardsData.levelingConfig || DEFAULT_LEVELING_CONFIG;
   
   // Проверяем все уровни от lastProcessedLevel до текущего
   let grantedGlory = 0;
@@ -1225,7 +1235,11 @@ class RewardsModal extends Modal {
       for (const trophy of rewardsData.inventory) {
         const row = el.createDiv({ cls: 'lt-row' });
         const icon = trophy.type === REWARD_TYPES.ACCESSORY ? '📿' : trophy.type === REWARD_TYPES.DECOR ? '🏺' : '📜';
-        row.createEl('span', { text: `${icon} ${trophy.name}` });
+        const nameSpan = row.createEl('span', { text: `${icon} ${trophy.name}` });
+        // Отображаем описание если есть
+        if (trophy.description) {
+          row.createEl('div', { cls: 'lt-description', text: trophy.description });
+        }
         
         // Проверяем, экипирован ли этот трофей в какой-либо слот
         const equippedSlot = rewardsData.slots.find(s => s.trophyId === trophy.id);
@@ -1281,6 +1295,7 @@ class RewardsModal extends Modal {
     el.createEl('h3', { text: '➕ Создать трофей (1 🪙)' });
     const addForm = el.createDiv({ cls: 'lt-form' });
     const nameInput = addForm.createEl('input', { type: 'text', placeholder: 'Название трофея (реальный предмет)', cls: 'lt-big-input' });
+    const descInput = addForm.createEl('input', { type: 'text', placeholder: 'Описание трофея (необязательно)', cls: 'lt-big-input' });
     const typeSelect = addForm.createEl('select', { cls: 'lt-big-select' });
     typeSelect.createEl('option', { value: REWARD_TYPES.ACCESSORY, text: '📿 Аксессуар (часы, кольцо, браслет...)' });
     typeSelect.createEl('option', { value: REWARD_TYPES.DECOR, text: '🏺 Декор (статуэтка, картина, грамота...)' });
@@ -1299,6 +1314,7 @@ class RewardsModal extends Modal {
         id: 'trophy_' + Date.now(),
         type: typeSelect.value,
         name: nameInput.value.trim(),
+        description: descInput.value.trim() || '',
         unlockedAt: iso(new Date())
       });
       rewardsData.currency -= 1;
@@ -1343,18 +1359,26 @@ class DashboardModal extends Modal {
     el.createEl('h3', { text: '⚙️ Настройки прогрессии' });
     const configForm = el.createDiv({ cls: 'lt-form' });
     const formulaSelect = configForm.createEl('select', { cls: 'lt-big-select' });
-    formulaSelect.createEl('option', { value: 'linear', text: 'Линейная (легко)', selected: DEFAULT_LEVELING_CONFIG.formula === 'linear' });
-    formulaSelect.createEl('option', { value: 'quadratic', text: 'Квадратичная (средне)', selected: DEFAULT_LEVELING_CONFIG.formula === 'quadratic' });
-    formulaSelect.createEl('option', { value: 'exponential', text: 'Экспоненциальная (сложно)', selected: DEFAULT_LEVELING_CONFIG.formula === 'exponential' });
+    // Используем сохранённую конфигурацию
+    const savedConfig = this.store.rewardsData.levelingConfig || DEFAULT_LEVELING_CONFIG;
+    formulaSelect.createEl('option', { value: 'linear', text: 'Линейная (легко)', selected: savedConfig.formula === 'linear' });
+    formulaSelect.createEl('option', { value: 'quadratic', text: 'Квадратичная (средне)', selected: savedConfig.formula === 'quadratic' });
+    formulaSelect.createEl('option', { value: 'exponential', text: 'Экспоненциальная (сложно)', selected: savedConfig.formula === 'exponential' });
     
-    const baseXPInput = configForm.createEl('input', { type: 'number', placeholder: 'Базовый XP', value: DEFAULT_LEVELING_CONFIG.baseXP, cls: 'lt-big-input' });
-    const growthInput = configForm.createEl('input', { type: 'number', placeholder: 'Коэф. роста', value: DEFAULT_LEVELING_CONFIG.growthFactor, step: '0.1', cls: 'lt-big-input' });
+    const baseXPInput = configForm.createEl('input', { type: 'number', placeholder: 'Базовый XP', value: savedConfig.baseXP, cls: 'lt-big-input' });
+    const growthInput = configForm.createEl('input', { type: 'number', placeholder: 'Коэф. роста', value: savedConfig.growthFactor, step: '0.1', cls: 'lt-big-input' });
+    const gloryPerLevelInput = configForm.createEl('input', { type: 'number', placeholder: 'Очков славы за уровень', value: savedConfig.gloryPerLevel, cls: 'lt-big-input' });
     
     configForm.createEl('button', { text: 'Применить настройки', cls: 'mod-cta' }).onclick = async () => {
-      DEFAULT_LEVELING_CONFIG.formula = formulaSelect.value;
-      DEFAULT_LEVELING_CONFIG.baseXP = parseInt(baseXPInput.value) || 100;
-      DEFAULT_LEVELING_CONFIG.growthFactor = parseFloat(growthInput.value) || 1.5;
-      new Notice(`Прогрессия обновлена: ${formulaSelect.value}, база ${DEFAULT_LEVELING_CONFIG.baseXP} XP`);
+      // Обновляем сохранённую конфигурацию
+      this.store.rewardsData.levelingConfig = {
+        formula: formulaSelect.value,
+        baseXP: parseInt(baseXPInput.value) || 100,
+        growthFactor: parseFloat(growthInput.value) || 1.5,
+        gloryPerLevel: parseInt(gloryPerLevelInput.value) || 1
+      };
+      await this.store.saveRewards();
+      new Notice(`Прогрессия обновлена: ${formulaSelect.value}, база ${this.store.rewardsData.levelingConfig.baseXP} XP`);
       this.close();
       new DashboardModal(this.app, this.store).open();
     };
