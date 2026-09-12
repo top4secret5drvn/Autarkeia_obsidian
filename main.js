@@ -423,6 +423,24 @@ class Store {
   async saveRef() { await this.a.write(this.base + '/reference.json', JSON.stringify(this.ref, null, 2)); this.cache = {}; }
   async saveWorkItems() { await this.a.write(this.workPath(), JSON.stringify(this.work, null, 2)); }
   async saveRewards() { await this.a.write(this.rewardsPath(), JSON.stringify(this.rewardsData, null, 2)); }
+  async loadRewards() {
+    const rp = this.rewardsPath();
+    if (await this.a.exists(rp)) {
+      const rawData = JSON.parse(await this.a.read(rp));
+      // Миграция: добавляем lastProcessedLevel если нет
+      if (rawData.lastProcessedLevel === undefined) {
+        rawData.lastProcessedLevel = 0;
+      }
+      // Миграция: слоты теперь объекты {id, name}
+      if (typeof rawData.slots.accessory === 'string') {
+        rawData.slots.accessory = rawData.slots.accessory ? { id: rawData.slots.accessory, name: rawData.slots.accessory } : null;
+      }
+      if (typeof rawData.slots.decor === 'string') {
+        rawData.slots.decor = rawData.slots.decor ? { id: rawData.slots.decor, name: rawData.slots.decor } : null;
+      }
+      this.rewardsData = rawData;
+    }
+  }
   async listDays() { try { const { files } = await this.a.list(this.base + '/journal'); return files.map(f => f.split('/').pop().replace('.json', '')).sort(); } catch (e) { return []; } }
 }
 
@@ -1164,6 +1182,11 @@ class RewardsModal extends Modal {
     const ref = this.store.ref;
     const rewardsData = this.store.rewardsData;
     
+    // Сначала проверяем и начисляем награды за уровни
+    await checkAndGrantLevelRewards(this.store);
+    // Перезагружаем данные после начисления
+    await this.store.loadRewards();
+    
     // Расчет текущего уровня и XP
     const progress = await getPlayerProgress(this.store);
     
@@ -1174,6 +1197,18 @@ class RewardsModal extends Modal {
     levelSection.createEl('h3', { text: `⚔️ Уровень ${progress.level} — ${progress.name}` });
     levelSection.createEl('div', { text: `✨ Всего XP: ${progress.totalXP}` });
     levelSection.createEl('div', { text: `📊 До следующего уровня: ${progress.remaining} XP` });
+    
+    // Кнопка проверки наград (для отладки)
+    levelSection.createEl('button', { text: '🔄 Проверить награды', cls: 'mod-cta' }).onclick = async () => {
+      const result = await checkAndGrantLevelRewards(this.store);
+      if (result) {
+        new Notice(`Получено ${result.grantedGlory} очков славы! Уровень: ${result.newLevel}`);
+        this.close();
+        new RewardsModal(this.app, this.store).open();
+      } else {
+        new Notice('Нет новых наград');
+      }
+    };
     
     // Секция 2: Титулы характеристик
     el.createEl('h3', { text: '📜 Титулы характеристик' });
@@ -1192,14 +1227,40 @@ class RewardsModal extends Modal {
     const currencyRow = el.createDiv({ cls: 'lt-rewards-currency' });
     currencyRow.createEl('span', { text: `Доступно: ${rewardsData.currency} 🪙` });
     
-    // Секция 4: Инвентарь наград
+    // Секция 4: Инвентарь наград с кнопками экипировки
     el.createEl('h3', { text: '🎒 Инвентарь' });
     if (rewardsData.inventory.length === 0) {
       el.createEl('p', { text: 'Пока нет наград. Выполняйте задачи и повышайте уровень!' });
     } else {
       for (const reward of rewardsData.inventory) {
         const row = el.createDiv({ cls: 'lt-row' });
-        row.createEl('span', { text: `${reward.type === REWARD_TYPES.ACCESSORY ? '📿' : reward.type === REWARD_TYPES.DECOR ? '🏺' : '📜'} ${reward.name}` });
+        const icon = reward.type === REWARD_TYPES.ACCESSORY ? '📿' : reward.type === REWARD_TYPES.DECOR ? '🏺' : '📜';
+        row.createEl('span', { text: `${icon} ${reward.name}` });
+        
+        // Кнопки управления
+        const actions = row.createDiv({ cls: 'lt-actions' });
+        
+        if (reward.type === REWARD_TYPES.ACCESSORY || reward.type === REWARD_TYPES.DECOR) {
+          const slotType = reward.type === REWARD_TYPES.ACCESSORY ? 'accessory' : 'decor';
+          const isEquipped = rewardsData.slots[slotType] && rewardsData.slots[slotType].id === reward.id;
+          
+          if (isEquipped) {
+            actions.createEl('button', { text: 'Снять', cls: 'mod-warning' }).onclick = async () => {
+              rewardsData.slots[slotType] = null;
+              await this.store.saveRewards();
+              this.close();
+              new RewardsModal(this.app, this.store).open();
+            };
+          } else {
+            actions.createEl('button', { text: 'Экипировать', cls: 'mod-cta' }).onclick = async () => {
+              rewardsData.slots[slotType] = { id: reward.id, name: reward.name };
+              await this.store.saveRewards();
+              this.close();
+              new RewardsModal(this.app, this.store).open();
+            };
+          }
+        }
+        
         row.createEl('span', { cls: 'lt-chip', text: new Date(reward.unlockedAt).toLocaleDateString() });
       }
     }
@@ -1207,19 +1268,38 @@ class RewardsModal extends Modal {
     // Секция 5: Активные слоты
     el.createEl('h3', { text: '🎯 Активные слоты' });
     const slotsRow = el.createDiv({ cls: 'lt-row' });
-    slotsRow.createEl('span', { text: `Аксессуар: ${rewardsData.slots.accessory || '—'}` });
-    slotsRow.createEl('span', { text: `Декор: ${rewardsData.slots.decor || '—'}` });
+    slotsRow.createEl('span', { text: `Аксессуар: ${rewardsData.slots.accessory ? rewardsData.slots.accessory.name : '—'}` });
+    slotsRow.createEl('span', { text: `Декор: ${rewardsData.slots.decor ? rewardsData.slots.decor.name : '—'}` });
     
-    // Кнопка добавления награды (для тестирования)
-    el.createEl('button', { text: '+ Добавить тестовую награду', cls: 'mod-warning' }).onclick = async () => {
+    // Кнопка добавления пользовательской награды
+    el.createEl('h3', { text: '➕ Добавить награду' });
+    const addForm = el.createDiv({ cls: 'lt-form' });
+    const nameInput = addForm.createEl('input', { type: 'text', placeholder: 'Название награды', cls: 'lt-big-input' });
+    const typeSelect = addForm.createEl('select', { cls: 'lt-big-select' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.ACCESSORY, text: '📿 Аксессуар' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.DECOR, text: '🏺 Декор' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.TITLE, text: '📜 Титул' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.ACCESS, text: '🔓 Доступ' });
+    
+    addForm.createEl('button', { text: 'Добавить награду (10 🪙)', cls: 'mod-cta' }).onclick = async () => {
+      if (!nameInput.value.trim()) {
+        new Notice('Введите название награды');
+        return;
+      }
+      if (rewardsData.currency < 10) {
+        new Notice('Недостаточно очков славы');
+        return;
+      }
+      
       rewardsData.inventory.push({
-        id: 'test_' + Date.now(),
-        type: REWARD_TYPES.ACCESSORY,
-        name: 'Тестовая награда',
+        id: 'custom_' + Date.now(),
+        type: typeSelect.value,
+        name: nameInput.value.trim(),
         unlockedAt: iso(new Date())
       });
-      rewardsData.currency += 10;
+      rewardsData.currency -= 10;
       await this.store.saveRewards();
+      new Notice('Награда добавлена!');
       this.close();
       new RewardsModal(this.app, this.store).open();
     };

@@ -101,6 +101,16 @@ pre.block-language-lifetracker-day,
 .lt-rewards-form select { height: 40px; font-size: 14px; }
 .lt-rewards-form button { height: 40px; font-size: 14px; padding: 0 16px; }
 
+/* Действия с наградами (кнопки экипировки) */
+.lt-actions { display: flex; gap: 6px; margin-left: auto; }
+.lt-actions button { font-size: 12px; padding: 4px 10px; height: 32px; border-radius: 6px; }
+
+/* Форма добавления награды */
+.lt-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; padding: 12px; background: var(--background-secondary); border-radius: 8px; }
+.lt-form input[type="text"] { flex: 1; min-width: 200px; height: 40px; font-size: 14px; padding: 0 12px; }
+.lt-form select { height: 40px; font-size: 14px; }
+.lt-form button { height: 40px; font-size: 14px; padding: 0 16px; }
+
 /* Заблокированные элементы (требование характеристики) */
 .lt-locked { opacity: 0.5; color: var(--text-muted); }
 .lt-notice { background: var(--background-secondary); border-left: 3px solid var(--interactive-accent); padding: 8px 12px; margin: 8px 0; border-radius: 4px; font-size: 13px; }
