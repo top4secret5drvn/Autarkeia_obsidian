@@ -185,11 +185,49 @@ const STAT_TITLES = {
   energy: ENR_TITLES
 };
 
+/* ---------- Награды и типы ---------- */
+const REWARD_TYPES = {
+  ACCESSORY: 'accessory', // Реальный аксессуар (часы, кольцо, браслет)
+  DECOR: 'decor',         // Декор для дома (статуэтка, картина, грамота)
+  TITLE: 'title',         // Титул/Эпитет
+  ACCESS: 'access'        // Доступ к испытаниям
+};
+
+/* ---------- Конфигурация прогрессии по умолчанию ---------- */
+const DEFAULT_LEVELING_CONFIG = {
+  baseXP: 100,          // Базовый опыт для уровня 1
+  growthFactor: 1.8,    // Коэффициент роста (1.8 = тяжелая прогрессия)
+  formula: 'quadratic'  // 'linear', 'quadratic', 'exponential'
+};
+
+/* ---------- Структура наград по умолчанию ---------- */
+const DEFAULT_REWARDS_DATA = {
+  currency: 0,          // Очки славы (валюта за уровни)
+  inventory: [],        // Разблокированные награды [{id, type, name, unlockedAt}]
+  slots: {
+    accessory: null,    // Текущий носимый аксессуар
+    decor: null         // Текущий декор
+  },
+  titles: [],           // Разблокированные титулы характеристик
+  accesses: []          // Разблокированные доступы к испытаниям
+};
+
+/* ---------- XP за действия ---------- */
+const XP_REWARDS = {
+  habit: 10,            // За выполнение привычки
+  task: 20,             // За выполнение задачи
+  idea: 20,             // За реализацию идеи
+  goalBase: 40          // За цель (умножается на дни)
+};
+
 /* ---------- Расчет требуемого опыта для уровня (настраиваемая прогрессия) ---------- */
 function xpRequiredForLevel(level, config = {}) {
-  const baseXP = config.baseXP || 100;          // Базовое XP для уровня 1
-  const growthFactor = config.growthFactor || 1.5; // Коэффициент роста (1.5 = средняя сложность)
-  const formula = config.formula || 'quadratic'; // 'linear', 'quadratic', 'exponential', 'custom'
+  const cfg = { ...DEFAULT_LEVELING_CONFIG, ...config };
+  const baseXP = cfg.baseXP;
+  const growthFactor = cfg.growthFactor;
+  const formula = cfg.formula;
+  
+  if (level <= 0) return 0;
   
   switch (formula) {
     case 'linear':
@@ -204,13 +242,80 @@ function xpRequiredForLevel(level, config = {}) {
 }
 
 /* ---------- Получить текущий уровень по опыту ---------- */
-function getPlayerLevel(totalXP) {
+function getPlayerLevel(totalXP, config = {}) {
+  const cfg = { ...DEFAULT_LEVELING_CONFIG, ...config };
   for (let i = PLAYER_LEVELS.length - 1; i >= 0; i--) {
-    if (totalXP >= xpRequiredForLevel(i)) {
-      return { level: i, name: PLAYER_LEVELS[i].name, required: xpRequiredForLevel(i), next: xpRequiredForLevel(i + 1) || totalXP };
+    const required = xpRequiredForLevel(i, cfg);
+    if (totalXP >= required) {
+      const nextRequired = xpRequiredForLevel(i + 1, cfg);
+      return { 
+        level: i, 
+        name: PLAYER_LEVELS[i].name, 
+        required: required, 
+        next: nextRequired || totalXP,
+        progress: totalXP - required,
+        remaining: nextRequired - totalXP
+      };
     }
   }
-  return { level: 0, name: PLAYER_LEVELS[0].name, required: 0, next: xpRequiredForLevel(1) };
+  return { 
+    level: 0, 
+    name: PLAYER_LEVELS[0].name, 
+    required: 0, 
+    next: xpRequiredForLevel(1, cfg),
+    progress: totalXP,
+    remaining: xpRequiredForLevel(1, cfg) - totalXP
+  };
+}
+
+/* ---------- Получить титул характеристики ---------- */
+function getStatTitle(statKey, statValue) {
+  const titles = STAT_TITLES[statKey];
+  if (!titles || titles.length === 0) return '';
+  // statValue от 0 до ~100+, индекс от 0 до 49
+  const index = Math.min(Math.floor(statValue), titles.length - 1);
+  return titles[Math.max(0, index)];
+}
+
+/* ---------- Расчет общего XP игрока ---------- */
+function calculateTotalXP(store, journalData) {
+  let totalXP = 0;
+  
+  // XP за привычки
+  Object.values(journalData).forEach(day => {
+    if (day.habitLogs) {
+      day.habitLogs.forEach(log => {
+        if (log.done) {
+          totalXP += XP_REWARDS.habit;
+        }
+      });
+    }
+    
+    // XP за задачи и идеи
+    if (day.completedWorkItems) {
+      day.completedWorkItems.forEach(item => {
+        if (item.kind === 'task') {
+          totalXP += XP_REWARDS.task;
+        } else if (item.kind === 'idea') {
+          totalXP += XP_REWARDS.idea;
+        }
+      });
+    }
+  });
+  
+  // XP за цели
+  if (store.ref && store.ref.goals) {
+    store.ref.goals.forEach(goal => {
+      if (goal.status === 'completed' && goal.completedAt) {
+        const startDate = parseISO(goal.start);
+        const endDate = parseISO(goal.completedAt);
+        const days = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+        totalXP += XP_REWARDS.goalBase * Math.max(1, days);
+      }
+    });
+  }
+  
+  return totalXP;
 }
 
 /* ---------- стартовые данные ---------- */
@@ -247,7 +352,15 @@ function seedWorkItems() {
 
 /* ---------- Store ---------- */
 class Store {
-  constructor(app) { this.app = app; this.a = app.vault.adapter; this.base = 'LifeTracker'; this.ref = null; this.work = null; this.cache = {}; }
+  constructor(app) { 
+    this.app = app; 
+    this.a = app.vault.adapter; 
+    this.base = 'LifeTracker'; 
+    this.ref = null; 
+    this.work = null; 
+    this.cache = {};
+    this.rewardsData = null;
+  }
   async init() {
     await this.a.mkdir(this.base).catch(() => {});
     await this.a.mkdir(this.base + '/journal').catch(() => {});
@@ -260,9 +373,15 @@ class Store {
     const wp = this.base + '/workItems.json';
     this.work = await this.a.exists(wp) ? JSON.parse(await this.a.read(wp)) : seedWorkItems();
     if (!await this.a.exists(wp)) await this.saveWorkItems();
+    
+    // Инициализация данных наград
+    const rp = this.base + '/rewards.json';
+    this.rewardsData = await this.a.exists(rp) ? JSON.parse(await this.a.read(rp)) : { ...DEFAULT_REWARDS_DATA };
+    if (!await this.a.exists(rp)) await this.saveRewards();
   }
   dayPath(d) { return this.base + '/journal/' + d + '.json'; }
   workPath() { return this.base + '/workItems.json'; }
+  rewardsPath() { return this.base + '/rewards.json'; }
   emptyDay(date) {
     return {
       schemaVersion: 1,
@@ -289,6 +408,7 @@ class Store {
   async saveDay(date) { if (this.cache[date]) await this.a.write(this.dayPath(date), JSON.stringify(this.cache[date], null, 2)); }
   async saveRef() { await this.a.write(this.base + '/reference.json', JSON.stringify(this.ref, null, 2)); this.cache = {}; }
   async saveWorkItems() { await this.a.write(this.workPath(), JSON.stringify(this.work, null, 2)); }
+  async saveRewards() { await this.a.write(this.rewardsPath(), JSON.stringify(this.rewardsData, null, 2)); }
   async listDays() { try { const { files } = await this.a.list(this.base + '/journal'); return files.map(f => f.split('/').pop().replace('.json', '')).sort(); } catch (e) { return []; } }
 }
 
@@ -365,12 +485,12 @@ async function weekCompletion(store, ref, today) {
 }
 
 /* ---------- Compute: Опыт игрока ---------- */
-// XP за выполнение привычки (базовое значение)
-const XP_HABIT = 10;
-// XP за задачу/идею (в 2 раза больше привычки)
-const XP_TASK_IDEA = XP_HABIT * 2;
-// XP за цель (в 2 раза больше задачи, умноженное на дни)
-const XP_GOAL_BASE = XP_TASK_IDEA * 2;
+// XP за выполнение привычки (базовое значение) - синхронизировано с XP_REWARDS.habit
+const XP_HABIT = XP_REWARDS.habit;
+// XP за задачу/идею (в 2 раза больше привычки) - синхронизировано с XP_REWARDS.task/idea
+const XP_TASK_IDEA = XP_REWARDS.task;
+// XP за цель (в 2 раза больше задачи, умноженное на дни) - синхронизировано с XP_REWARDS.goalBase
+const XP_GOAL_BASE = XP_REWARDS.goalBase;
 
 // Расчет опыта за один день
 function computeDayXP(ref, day, workItems = []) {
@@ -926,6 +1046,76 @@ class WorkItemEditModal extends Modal {
   }
 }
 
+/* ---------- UI: НАГРАДЫ И ТИТУЛЫ ---------- */
+class RewardsModal extends Modal {
+  constructor(app, store) { super(app); this.store = store; }
+  async onOpen() {
+    const el = this.contentEl; el.addClass('lt-rewards');
+    const ref = this.store.ref;
+    const rewardsData = this.store.rewardsData;
+    
+    // Расчет текущего уровня и XP
+    const progress = await getPlayerProgress(this.store);
+    
+    el.createEl('h2', { text: '🏆 Награды и титулы' });
+    
+    // Секция 1: Уровень игрока
+    const levelSection = el.createDiv({ cls: 'lt-rewards-section' });
+    levelSection.createEl('h3', { text: `⚔️ Уровень ${progress.level} — ${progress.name}` });
+    levelSection.createEl('div', { text: `✨ Всего XP: ${progress.totalXP}` });
+    levelSection.createEl('div', { text: `📊 До следующего уровня: ${progress.remaining} XP` });
+    
+    // Секция 2: Титулы характеристик
+    el.createEl('h3', { text: '📜 Титулы характеристик' });
+    const stats = computeDayStats(ref, await this.store.loadDay(iso(new Date())));
+    
+    for (const [key, label] of STATS) {
+      const statValue = stats.stats[key] || 0;
+      const title = getStatTitle(key, statValue);
+      const row = el.createDiv({ cls: 'lt-row' });
+      row.createEl('span', { cls: 'lt-name', text: `${label}: ${statValue}` });
+      row.createEl('span', { cls: 'lt-chip lt-title', text: title || '—' });
+    }
+    
+    // Секция 3: Очки славы (валюта наград)
+    el.createEl('h3', { text: '💰 Очки славы' });
+    const currencyRow = el.createDiv({ cls: 'lt-rewards-currency' });
+    currencyRow.createEl('span', { text: `Доступно: ${rewardsData.currency} 🪙` });
+    
+    // Секция 4: Инвентарь наград
+    el.createEl('h3', { text: '🎒 Инвентарь' });
+    if (rewardsData.inventory.length === 0) {
+      el.createEl('p', { text: 'Пока нет наград. Выполняйте задачи и повышайте уровень!' });
+    } else {
+      for (const reward of rewardsData.inventory) {
+        const row = el.createDiv({ cls: 'lt-row' });
+        row.createEl('span', { text: `${reward.type === REWARD_TYPES.ACCESSORY ? '📿' : reward.type === REWARD_TYPES.DECOR ? '🏺' : '📜'} ${reward.name}` });
+        row.createEl('span', { cls: 'lt-chip', text: new Date(reward.unlockedAt).toLocaleDateString() });
+      }
+    }
+    
+    // Секция 5: Активные слоты
+    el.createEl('h3', { text: '🎯 Активные слоты' });
+    const slotsRow = el.createDiv({ cls: 'lt-row' });
+    slotsRow.createEl('span', { text: `Аксессуар: ${rewardsData.slots.accessory || '—'}` });
+    slotsRow.createEl('span', { text: `Декор: ${rewardsData.slots.decor || '—'}` });
+    
+    // Кнопка добавления награды (для тестирования)
+    el.createEl('button', { text: '+ Добавить тестовую награду', cls: 'mod-warning' }).onclick = async () => {
+      rewardsData.inventory.push({
+        id: 'test_' + Date.now(),
+        type: REWARD_TYPES.ACCESSORY,
+        name: 'Тестовая награда',
+        unlockedAt: iso(new Date())
+      });
+      rewardsData.currency += 10;
+      await this.store.saveRewards();
+      this.close();
+      new RewardsModal(this.app, this.store).open();
+    };
+  }
+}
+
 /* ---------- UI: ДАШБОРД ---------- */
 class DashboardModal extends Modal {
   constructor(app, store) { super(app); this.store = store; }
@@ -949,6 +1139,11 @@ class DashboardModal extends Modal {
     const xpBar = levelCard.createDiv({ cls: 'lt-bar' });
     xpBar.createDiv({ cls: 'lt-bar-fill', attr: { style: `width:${xpPct}%` } });
     levelCard.createEl('div', { cls: 'lt-dash-subtitle', text: `${xpCurrent}/${xpNeeded} XP до уровня ${progress.level + 1}` });
+
+    // Добавим кнопку для просмотра наград
+    el.createEl('button', { text: '🏆 Награды и титулы', cls: 'mod-cta' }).onclick = () => { 
+      new RewardsModal(this.app, this.store).open(); 
+    };
 
     // 1. Сводка дня
     const c = dayCompletion(ref, day);

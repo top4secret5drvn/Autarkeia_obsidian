@@ -1,3 +1,1 @@
-```javascript
-
-```
+Nothing needs to be added to .gitignore since the changes only include source/config files (FEATURES_SUMMARY.md and main.js) without any build artifacts, dependencies, or temporary files that require ignoring.
