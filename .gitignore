@@ -1,45 +1,67 @@
 ```
-# Compiled and binary files
-*.pyc
-__pycache__/
-*.o
-*.obj
-*.exe
-*.dll
-*.so
-*.a
-*.out
-
 # Dependencies
 node_modules/
-venv/
-.venv/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Environment
 .env
 .env.local
-.env.*
+*.env.*
+
+# Editors
+.vscode/
+.idea/
 
 # Build artifacts
 dist/
 build/
 target/
 
-# Logs and temp files
-*.log
-*.tmp
-*.swp
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py.class
+*.py.obj
+*.py.out
+*.py.o
+*.py.a
+*.py.so
+*.py.dll
+*.py.exe
 
-# Editors
-.vscode/
-.idea/
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.tar
+*.zip
+*.gz
+*.tar.gz
+*.rar
+*.7z
 
-# System files
-.DS_Store
-Thumbs.db
+# C/C++
+*.o
+*.obj
+*.out
+*.exe
+*.dll
+*.so
+*.a
 
-# Coverage
-coverage/
-htmlcov/
-.coverage
+# Go
+*.o
+
+# Ruby
+*.gem
+*.rbc
+*.sass-cache
 
 # Compressed files
 *.zip
@@ -64,4 +86,28 @@ htmlcov/
 *.tar.bz2
 *.tar.xz
 *.tar.zst
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# MyPy cache
+.mypy_cache/
+
+# PyTest cache
+.pytest_cache/
+
+# Gradle
+.gradle/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
 ```

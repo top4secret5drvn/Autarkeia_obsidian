@@ -1,0 +1,30 @@
+{
+  "currency": 3,
+  "inventory": [
+    {
+      "id": "trophy_1789205204803",
+      "type": "accessory",
+      "name": "Золотые часы",
+      "description": "Красивые золотые часы в подарок за достижения",
+      "unlockedAt": "2026-09-12T09:26:44.803Z"
+    },
+    {
+      "id": "trophy_1789205318375",
+      "type": "accessory",
+      "name": "Золотые часы",
+      "description": "Красивые золотые часы",
+      "unlockedAt": "2026-09-12T09:28:38.375Z"
+    }
+  ],
+  "slots": [],
+  "titles": [],
+  "accesses": [],
+  "lastProcessedLevel": 0,
+  "unlockedSlots": 0,
+  "levelingConfig": {
+    "baseXP": 100,
+    "growthFactor": 1.5,
+    "formula": "quadratic",
+    "gloryPerLevel": 1
+  }
+}

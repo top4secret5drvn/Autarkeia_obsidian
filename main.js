@@ -641,6 +641,8 @@ async function checkAndGrantLevelRewards(store) {
   if (grantedGlory > 0 || newSlots > 0) {
     rewardsData.currency += grantedGlory;
     rewardsData.lastProcessedLevel = progress.level;
+    // Синхронизируем store.rewardsData перед сохранением
+    store.rewardsData = rewardsData;
     await store.saveRewards();
     return { grantedGlory, newLevel: progress.level, unlockedSlots: rewardsData.unlockedSlots };
   }
@@ -1205,12 +1207,17 @@ class RewardsModal extends Modal {
   async onOpen() {
     const el = this.contentEl; el.addClass('lt-rewards');
     const ref = this.store.ref;
+    
+    // Сначала загружаем свежие данные из файла
+    await this.store.loadRewards();
     const rewardsData = this.store.rewardsData;
     
-    // Сначала проверяем и начисляем награды за уровни
+    // Затем проверяем и начисляем награды за уровни
     await checkAndGrantLevelRewards(this.store);
-    // Перезагружаем данные после начисления
+    // Перезагружаем данные после начисления наград
     await this.store.loadRewards();
+    // Обновляем локальную переменную
+    const updatedRewardsData = this.store.rewardsData;
     
     // Расчет текущего уровня и XP
     const progress = await getPlayerProgress(this.store);
@@ -1250,14 +1257,14 @@ class RewardsModal extends Modal {
     // Секция 3: Очки славы (валюта наград)
     el.createEl('h3', { text: '💰 Очки славы' });
     const currencyRow = el.createDiv({ cls: 'lt-rewards-currency' });
-    currencyRow.createEl('span', { text: `Доступно: ${rewardsData.currency} 🪙` });
+    currencyRow.createEl('span', { text: `Доступно: ${updatedRewardsData.currency} 🪙` });
     
     // Секция 4: Инвентарь трофеев (купили -> можно поместить в слот)
     el.createEl('h3', { text: '🎒 Инвентарь трофеев' });
-    if (rewardsData.inventory.length === 0) {
+    if (updatedRewardsData.inventory.length === 0) {
       el.createEl('p', { text: 'Пока нет трофеев. Создайте трофей за очки славы!' });
     } else {
-      for (const trophy of rewardsData.inventory) {
+      for (const trophy of updatedRewardsData.inventory) {
         const row = el.createDiv({ cls: 'lt-row' });
         const icon = trophy.type === REWARD_TYPES.ACCESSORY ? '📿' : trophy.type === REWARD_TYPES.DECOR ? '🏺' : '📜';
         const nameSpan = row.createEl('span', { text: `${icon} ${trophy.name}` });
@@ -1274,6 +1281,7 @@ class RewardsModal extends Modal {
           if (equippedSlot) {
             actions.createEl('button', { text: 'Снять', cls: 'mod-warning' }).onclick = async () => {
               rewardsData.slots = rewardsData.slots.filter(s => s.trophyId !== trophy.id);
+              this.store.rewardsData = rewardsData;
               await this.store.saveRewards();
               this.close();
               new RewardsModal(this.app, this.store).open();
@@ -1293,6 +1301,7 @@ class RewardsModal extends Modal {
                 trophyName: trophy.name, 
                 type: slotType 
               });
+              this.store.rewardsData = rewardsData;
               await this.store.saveRewards();
               this.close();
               new RewardsModal(this.app, this.store).open();
@@ -1335,14 +1344,18 @@ class RewardsModal extends Modal {
         return;
       }
       
-      rewardsData.inventory.push({
+      const newTrophy = {
         id: 'trophy_' + Date.now(),
         type: typeSelect.value,
         name: nameInput.value.trim(),
         description: descInput.value.trim() || '',
         unlockedAt: iso(new Date())
-      });
+      };
+      
+      rewardsData.inventory.push(newTrophy);
       rewardsData.currency -= 1;
+      // Синхронизируем store.rewardsData перед сохранением
+      this.store.rewardsData = rewardsData;
       await this.store.saveRewards();
       new Notice('Трофей создан!');
       this.close();
@@ -1408,6 +1421,8 @@ class DashboardModal extends Modal {
       const newProgress = await getPlayerProgress(this.store);
       // Проверяем и начисляем награды с новой конфигурацией
       await checkAndGrantLevelRewards(this.store);
+      // Синхронизируем данные перед перезагрузкой модального окна
+      this.store.rewardsData = this.store.rewardsData;
       this.close();
       new DashboardModal(this.app, this.store).open();
     };
