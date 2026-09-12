@@ -33,6 +33,78 @@ function skillProgress(h) {
   return Math.min(100, Math.round(((h - lv.from) / (lv.to - lv.from)) * 100));
 }
 
+/* ---------- Уровни игрока (50 уровней, самурайская тематика) ---------- */
+const PLAYER_LEVELS = [
+  { level: 0,  name: 'Неофит' },
+  { level: 1,  name: 'Искатель' },
+  { level: 2,  name: 'Ученик' },
+  { level: 3,  name: 'Подмастерье' },
+  { level: 4,  name: 'Кэнси' },           // Ученик самурая
+  { level: 5,  name: 'Адепт' },
+  { level: 6,  name: 'Сталкер' },
+  { level: 7,  name: 'Следопыт' },
+  { level: 8,  name: 'Охотник' },
+  { level: 9,  name: 'Мечник' },
+  { level: 10, name: 'Воин' },
+  { level: 11, name: 'Боец' },
+  { level: 12, name: 'Самурай' },         // Воин благородного сословия
+  { level: 13, name: 'Специалист' },
+  { level: 14, name: 'Эксперт' },
+  { level: 15, name: 'Профи' },
+  { level: 16, name: 'Мастер' },
+  { level: 17, name: 'Виртуоз' },
+  { level: 18, name: 'Ветеран' },
+  { level: 19, name: 'Страж' },
+  { level: 20, name: 'Защитник' },
+  { level: 21, name: 'Герой' },
+  { level: 22, name: 'Чемпион' },
+  { level: 23, name: 'Витязь' },
+  { level: 24, name: 'Паладин' },
+  { level: 25, name: 'Рыцарь' },
+  { level: 26, name: 'Командор' },
+  { level: 27, name: 'Генерал' },
+  { level: 28, name: 'Тактик' },
+  { level: 29, name: 'Стратег' },
+  { level: 30, name: 'Лидер' },
+  { level: 31, name: 'Наставник' },
+  { level: 32, name: 'Учитель' },
+  { level: 33, name: 'Гуру' },
+  { level: 34, name: 'Легенда' },
+  { level: 35, name: 'Архитектор' },
+  { level: 36, name: 'Творец' },
+  { level: 37, name: 'Зодчий' },
+  { level: 38, name: 'Мудрец' },
+  { level: 39, name: 'Философ' },
+  { level: 40, name: 'Дзен-мастер' },     // Мастер дзен-буддизма
+  { level: 41, name: 'Оракул' },
+  { level: 42, name: 'Провидец' },
+  { level: 43, name: 'Ясновидец' },
+  { level: 44, name: 'Маг' },
+  { level: 45, name: 'Чародей' },
+  { level: 46, name: 'Волшебник' },
+  { level: 47, name: 'Вершитель' },
+  { level: 48, name: 'Повелитель' },
+  { level: 49, name: 'Суверен' },
+  { level: 50, name: 'Император' }        // Высший титул
+];
+
+/* ---------- Расчет требуемого опыта для уровня ---------- */
+function xpRequiredForLevel(level) {
+  // Квадратичная прогрессия: каждый уровень требует больше опыта
+  // Уровень 0: 0 XP, Уровень 1: 100 XP, Уровень 2: 300 XP, ..., Уровень 50: ~127500 XP
+  return Math.floor(level * (level + 1) * 50);
+}
+
+/* ---------- Получить текущий уровень по опыту ---------- */
+function getPlayerLevel(totalXP) {
+  for (let i = PLAYER_LEVELS.length - 1; i >= 0; i--) {
+    if (totalXP >= xpRequiredForLevel(i)) {
+      return { level: i, name: PLAYER_LEVELS[i].name, required: xpRequiredForLevel(i), next: xpRequiredForLevel(i + 1) || totalXP };
+    }
+  }
+  return { level: 0, name: PLAYER_LEVELS[0].name, required: 0, next: xpRequiredForLevel(1) };
+}
+
 /* ---------- стартовые данные ---------- */
 function seedReference() {
   return {
@@ -184,6 +256,78 @@ async function weekCompletion(store, ref, today) {
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 };
 }
 
+/* ---------- Compute: Опыт игрока ---------- */
+// XP за выполнение привычки (базовое значение)
+const XP_HABIT = 10;
+// XP за задачу/идею (в 2 раза больше привычки)
+const XP_TASK_IDEA = XP_HABIT * 2;
+// XP за цель (в 2 раза больше задачи, умноженное на дни)
+const XP_GOAL_BASE = XP_TASK_IDEA * 2;
+
+// Расчет опыта за один день
+function computeDayXP(ref, day, workItems = []) {
+  let xp = 0;
+  
+  // Опыт за привычки
+  for (const h of ref.habits) {
+    const l = day.habitLogs.find(x => x.habitId === h.id);
+    if (l && l.done) xp += XP_HABIT;
+  }
+  
+  // Опыт за вещества (как привычки)
+  for (const s of ref.substances) {
+    const l = day.substanceLogs.find(x => x.substanceId === s.id);
+    if (l && l.taken) xp += XP_HABIT;
+  }
+  
+  // Опыт за активности (если выполнены)
+  for (const a of ref.activities) {
+    const l = day.activityLogs.find(x => x.activityId === a.id);
+    if (l && l.amount > 0) xp += XP_HABIT;
+  }
+  
+  // Опыт за задачи и идеи из workItems
+  for (const item of workItems) {
+    if (item.status === 'done' && item.completedDate === day.date) {
+      if (item.kind === 'task' || item.kind === 'idea') {
+        xp += XP_TASK_IDEA;
+      }
+    }
+  }
+  
+  // Опыт за цели (проверяем завершение целей в этот день)
+  for (const g of ref.goals || []) {
+    if (g.status === 'completed' && g.completedDate === day.date) {
+      const daysCount = g.start && g.end 
+        ? Math.max(1, Math.ceil((parseISO(g.end) - parseISO(g.start)) / (1000 * 60 * 60 * 24)))
+        : 1;
+      xp += XP_GOAL_BASE * daysCount;
+    }
+  }
+  
+  return xp;
+}
+
+// Подсчет общего опыта за все дни
+async function computeTotalXP(store) {
+  let totalXP = 0;
+  const days = await store.listDays();
+  const workItems = store.work?.items || [];
+  
+  for (const date of days) {
+    const day = await store.loadDay(date);
+    totalXP += computeDayXP(store.ref, day, workItems);
+  }
+  
+  return totalXP;
+}
+
+// Получить текущий уровень и прогресс игрока
+async function getPlayerProgress(store) {
+  const totalXP = await computeTotalXP(store);
+  return { ...getPlayerLevel(totalXP), totalXP };
+}
+
 /* ---------- UI: ДЕНЬ ---------- */
 class DayModal extends Modal {
   constructor(app, store, date) { super(app); this.store = store; this.date = date; }
@@ -194,10 +338,12 @@ class DayModal extends Modal {
     const footer = el.createDiv({ cls: 'lt-footer' });
     const footerText = () => {
       const r = computeDayStats(ref, day), k = dayKcal(ref, day), f = dayFinance(ref, day), c = dayCompletion(ref, day);
+      const xpToday = computeDayXP(ref, day, store.work?.items || []);
       return `🎯 ${c.pct}% (${c.done}/${c.total}) · ` + STATS.map(([key, lab]) => `${lab} ${r.stats[key]}`).join(' · ') +
         ` | ккал ${k.balance >= 0 ? '+' : ''}${k.balance}` +
         ` | ₽ ${f.balance >= 0 ? '+' : ''}${f.balance}` +
-        (r.syn.length ? ` | синергии: ${r.syn.length} ✅` : '');
+        (r.syn.length ? ` | синергии: ${r.syn.length} ✅` : '') +
+        ` | ✨ +${xpToday} XP`;
     };
     const save = debounce(() => { store.saveDay(date); footer.setText(footerText() + ' · сохранено ✓'); }, 400);
     const refresh = () => { footer.setText(footerText()); save(); };
@@ -682,6 +828,19 @@ class DashboardModal extends Modal {
     const day = await this.store.loadDay(today);
 
     el.createEl('h2', { text: '📊 Дашборд персонажа' });
+
+    // 0. Уровень и опыт игрока
+    const progress = await getPlayerProgress(this.store);
+    const xpCurrent = progress.totalXP - progress.required;
+    const xpNeeded = progress.next - progress.required;
+    const xpPct = xpNeeded > 0 ? Math.round((xpCurrent / xpNeeded) * 100) : 100;
+    
+    const levelCard = el.createDiv({ cls: 'lt-dash-card lt-level-card' });
+    levelCard.createEl('div', { cls: 'lt-dash-title', text: `⚔️ Уровень ${progress.level} — ${progress.name}` });
+    levelCard.createEl('div', { cls: 'lt-dash-value', text: `✨ ${progress.totalXP} XP` });
+    const xpBar = levelCard.createDiv({ cls: 'lt-bar' });
+    xpBar.createDiv({ cls: 'lt-bar-fill', attr: { style: `width:${xpPct}%` } });
+    levelCard.createEl('div', { cls: 'lt-dash-subtitle', text: `${xpCurrent}/${xpNeeded} XP до уровня ${progress.level + 1}` });
 
     // 1. Сводка дня
     const c = dayCompletion(ref, day);

@@ -46,6 +46,14 @@ pre.block-language-lifetracker-day,
 .lt-dash-card { background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
 .lt-dash-title { font-size: 13px; color: var(--text-muted); }
 .lt-dash-value { font-size: 18px; font-weight: 700; }
+.lt-dash-subtitle { font-size: 11px; color: var(--text-muted); margin-top: 6px; width: 100%; text-align: center; }
+
+/* Карточка уровня игрока */
+.lt-level-card { flex-direction: column; align-items: stretch; background: linear-gradient(135deg, var(--background-secondary) 0%, var(--background-primary) 100%); border: 2px solid var(--interactive-accent); }
+.lt-level-card .lt-dash-title { font-size: 16px; font-weight: 700; color: var(--interactive-accent); text-align: center; margin-bottom: 8px; }
+.lt-level-card .lt-dash-value { font-size: 22px; font-weight: 800; text-align: center; }
+.lt-level-card .lt-bar { height: 12px; margin: 10px 0; border-radius: 6px; }
+.lt-level-card .lt-bar-fill { background: linear-gradient(90deg, var(--interactive-accent) 0%, var(--interactive-hover) 100%); }
 
 /* ---------- виджет: ПАНЕЛЬ 1 (ASCII) ---------- */
 .lt-ascii {
