@@ -386,12 +386,21 @@ class Store {
     if (!rawData.levelingConfig) {
       rawData.levelingConfig = { ...DEFAULT_LEVELING_CONFIG };
     }
-    // Миграция: слоты теперь объекты {id, name}
-    if (typeof rawData.slots.accessory === 'string') {
-      rawData.slots.accessory = rawData.slots.accessory ? { id: rawData.slots.accessory, name: rawData.slots.accessory } : null;
+    // Миграция: слоты теперь массив объектов
+    if (rawData.slots && !Array.isArray(rawData.slots)) {
+      rawData.slots = [];
     }
-    if (typeof rawData.slots.decor === 'string') {
-      rawData.slots.decor = rawData.slots.decor ? { id: rawData.slots.decor, name: rawData.slots.decor } : null;
+    // Миграция: инвентарь должен быть массивом
+    if (!rawData.inventory || !Array.isArray(rawData.inventory)) {
+      rawData.inventory = [];
+    }
+    // Миграция: валюта должна быть числом
+    if (rawData.currency === undefined || typeof rawData.currency !== 'number') {
+      rawData.currency = 0;
+    }
+    // Миграция: разблокированные слоты
+    if (rawData.unlockedSlots === undefined || typeof rawData.unlockedSlots !== 'number') {
+      rawData.unlockedSlots = 0;
     }
     this.rewardsData = rawData;
     if (!await this.a.exists(rp)) await this.saveRewards();
@@ -438,14 +447,26 @@ class Store {
       if (!rawData.levelingConfig) {
         rawData.levelingConfig = { ...DEFAULT_LEVELING_CONFIG };
       }
-      // Миграция: слоты теперь объекты {id, name}
-      if (typeof rawData.slots.accessory === 'string') {
-        rawData.slots.accessory = rawData.slots.accessory ? { id: rawData.slots.accessory, name: rawData.slots.accessory } : null;
+      // Миграция: слоты теперь массив объектов
+      if (rawData.slots && !Array.isArray(rawData.slots)) {
+        rawData.slots = [];
       }
-      if (typeof rawData.slots.decor === 'string') {
-        rawData.slots.decor = rawData.slots.decor ? { id: rawData.slots.decor, name: rawData.slots.decor } : null;
+      // Миграция: инвентарь должен быть массивом
+      if (!rawData.inventory || !Array.isArray(rawData.inventory)) {
+        rawData.inventory = [];
+      }
+      // Миграция: валюта должна быть числом
+      if (rawData.currency === undefined || typeof rawData.currency !== 'number') {
+        rawData.currency = 0;
+      }
+      // Миграция: разблокированные слоты
+      if (rawData.unlockedSlots === undefined || typeof rawData.unlockedSlots !== 'number') {
+        rawData.unlockedSlots = 0;
       }
       this.rewardsData = rawData;
+    } else {
+      // Если файл не существует, создаём дефолтные данные
+      this.rewardsData = { ...DEFAULT_REWARDS_DATA };
     }
   }
   async listDays() { try { const { files } = await this.a.list(this.base + '/journal'); return files.map(f => f.split('/').pop().replace('.json', '')).sort(); } catch (e) { return []; } }
@@ -592,7 +613,9 @@ async function computeTotalXP(store) {
 // Получить текущий уровень и прогресс игрока
 async function getPlayerProgress(store) {
   const totalXP = await computeTotalXP(store);
-  return { ...getPlayerLevel(totalXP), totalXP };
+  // Используем сохранённую конфигурацию прогрессии
+  const cfg = store.rewardsData?.levelingConfig || DEFAULT_LEVELING_CONFIG;
+  return { ...getPlayerLevel(totalXP, cfg), totalXP };
 }
 
 /* ---------- Проверка и начисление наград за уровни ---------- */
@@ -604,16 +627,18 @@ async function checkAndGrantLevelRewards(store) {
   
   // Проверяем все уровни от lastProcessedLevel до текущего
   let grantedGlory = 0;
+  let newSlots = 0;
   for (let lvl = rewardsData.lastProcessedLevel + 1; lvl <= progress.level; lvl++) {
     // Начисляем 1 очко славы за уровень
     grantedGlory += cfg.gloryPerLevel;
     
     // Разблокируем один слот за уровень
     rewardsData.unlockedSlots = Math.max(rewardsData.unlockedSlots, lvl);
+    newSlots++;
   }
   
-  // Начисляем очки славы
-  if (grantedGlory > 0 || rewardsData.unlockedSlots > 0) {
+  // Начисляем очки славы только если есть изменения
+  if (grantedGlory > 0 || newSlots > 0) {
     rewardsData.currency += grantedGlory;
     rewardsData.lastProcessedLevel = progress.level;
     await store.saveRewards();
@@ -1379,6 +1404,10 @@ class DashboardModal extends Modal {
       };
       await this.store.saveRewards();
       new Notice(`Прогрессия обновлена: ${formulaSelect.value}, база ${this.store.rewardsData.levelingConfig.baseXP} XP`);
+      // Пересчитываем уровень с новыми параметрами
+      const newProgress = await getPlayerProgress(this.store);
+      // Проверяем и начисляем награды с новой конфигурацией
+      await checkAndGrantLevelRewards(this.store);
       this.close();
       new DashboardModal(this.app, this.store).open();
     };
