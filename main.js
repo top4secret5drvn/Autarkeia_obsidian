@@ -195,9 +195,10 @@ const REWARD_TYPES = {
 
 /* ---------- Конфигурация прогрессии по умолчанию ---------- */
 const DEFAULT_LEVELING_CONFIG = {
-  baseXP: 100,          // Базовый опыт для уровня 1
-  growthFactor: 1.8,    // Коэффициент роста (1.8 = тяжелая прогрессия)
-  formula: 'quadratic'  // 'linear', 'quadratic', 'exponential'
+  baseXP: 150,          // Базовый опыт для уровня 1 (тяжелее)
+  growthFactor: 2.0,    // Коэффициент роста (2.0 = очень тяжелая прогрессия)
+  formula: 'quadratic', // 'linear', 'quadratic', 'exponential'
+  gloryPerLevel: 50     // Очки славы за каждый уровень
 };
 
 /* ---------- Структура наград по умолчанию ---------- */
@@ -205,11 +206,12 @@ const DEFAULT_REWARDS_DATA = {
   currency: 0,          // Очки славы (валюта за уровни)
   inventory: [],        // Разблокированные награды [{id, type, name, unlockedAt}]
   slots: {
-    accessory: null,    // Текущий носимый аксессуар
-    decor: null         // Текущий декор
+    accessory: null,    // Текущий носимый аксессуар {id, name}
+    decor: null         // Текущий декор {id, name}
   },
-  titles: [],           // Разблокированные титулы характеристик
-  accesses: []          // Разблокированные доступы к испытаниям
+  titles: [],           // Разблокированные титулы характеристик [{stat, level, title}]
+  accesses: [],         // Разблокированные доступы к испытаниям [{id, name}]
+  lastProcessedLevel: 0 // Последний обработанный уровень для начисления наград
 };
 
 /* ---------- XP за действия ---------- */
@@ -376,7 +378,19 @@ class Store {
     
     // Инициализация данных наград
     const rp = this.base + '/rewards.json';
-    this.rewardsData = await this.a.exists(rp) ? JSON.parse(await this.a.read(rp)) : { ...DEFAULT_REWARDS_DATA };
+    let rawData = await this.a.exists(rp) ? JSON.parse(await this.a.read(rp)) : { ...DEFAULT_REWARDS_DATA };
+    // Миграция: добавляем lastProcessedLevel если нет
+    if (rawData.lastProcessedLevel === undefined) {
+      rawData.lastProcessedLevel = 0;
+    }
+    // Миграция: слоты теперь объекты {id, name}
+    if (typeof rawData.slots.accessory === 'string') {
+      rawData.slots.accessory = rawData.slots.accessory ? { id: rawData.slots.accessory, name: rawData.slots.accessory } : null;
+    }
+    if (typeof rawData.slots.decor === 'string') {
+      rawData.slots.decor = rawData.slots.decor ? { id: rawData.slots.decor, name: rawData.slots.decor } : null;
+    }
+    this.rewardsData = rawData;
     if (!await this.a.exists(rp)) await this.saveRewards();
   }
   dayPath(d) { return this.base + '/journal/' + d + '.json'; }
@@ -554,6 +568,51 @@ async function computeTotalXP(store) {
 async function getPlayerProgress(store) {
   const totalXP = await computeTotalXP(store);
   return { ...getPlayerLevel(totalXP), totalXP };
+}
+
+/* ---------- Проверка и начисление наград за уровни ---------- */
+async function checkAndGrantLevelRewards(store) {
+  const progress = await getPlayerProgress(store);
+  const rewardsData = store.rewardsData;
+  const cfg = DEFAULT_LEVELING_CONFIG;
+  
+  // Проверяем все уровни от lastProcessedLevel до текущего
+  let grantedGlory = 0;
+  for (let lvl = rewardsData.lastProcessedLevel + 1; lvl <= progress.level; lvl++) {
+    // Начисляем очки славы за уровень
+    grantedGlory += cfg.gloryPerLevel;
+    
+    // Создаем универсальную награду за уровень
+    const rewardId = `level_${lvl}`;
+    if (!rewardsData.inventory.find(r => r.id === rewardId)) {
+      rewardsData.inventory.push({
+        id: rewardId,
+        type: REWARD_TYPES.DECOR,
+        name: `Награда за уровень ${lvl}`,
+        unlockedAt: iso(new Date())
+      });
+    }
+  }
+  
+  // Начисляем очки славы
+  if (grantedGlory > 0) {
+    rewardsData.currency += grantedGlory;
+    rewardsData.lastProcessedLevel = progress.level;
+    await store.saveRewards();
+    return { grantedGlory, newLevel: progress.level };
+  }
+  
+  return null;
+}
+
+/* ---------- Проверка порога характеристики для задачи/идеи ---------- */
+function checkStatRequirement(item, currentStats) {
+  if (!item || !item.minStatRequirement) return true;
+  
+  const req = item.minStatRequirement;
+  const statValue = currentStats[req.stat] || 0;
+  
+  return statValue >= req.threshold;
 }
 
 /* ---------- UI: ДЕНЬ ---------- */
@@ -996,11 +1055,27 @@ class WorkItemsModal extends Modal {
         return it.kind === curKind;
       });
       if (items.length === 0) list.createDiv({ text: '— пусто —' });
+      
+      // Получаем текущие статы для проверки требований
+      const todayStats = computeDayStats(this.store.ref, this.store.cache[iso(new Date())] || { habitLogs: [], substanceLogs: [], activityLogs: [] }).stats;
+      
       for (const it of items) {
         const row = list.createDiv({ cls: 'lt-row' });
         const statusIcons = { backlog: '○', in_progress: '◐', done: '✓', dropped: '✕' };
-        row.createEl('span', { cls: 'lt-chip', text: (it.kind === 'task' ? '📝 ' : '💡 ') + (statusIcons[it.status] || '') });
-        row.createEl('span', { cls: 'lt-name' + (it.status === 'done' ? ' lt-done' : ''), text: it.name || '(без имени)' });
+        
+        // Проверяем требование к характеристике
+        let canAccess = true;
+        let reqText = '';
+        if (it.minStatRequirement) {
+          const [statKey, statLabel] = STATS.find(([k]) => k === it.minStatRequirement.stat) || ['', '?'];
+          const statValue = todayStats[it.minStatRequirement.stat] || 0;
+          canAccess = statValue >= it.minStatRequirement.threshold;
+          reqText = ` (${statLabel} ${statValue}/${it.minStatRequirement.threshold})`;
+        }
+        
+        const icon = canAccess ? (it.kind === 'task' ? '📝 ' : '💡 ') + (statusIcons[it.status] || '') : '🔒 ';
+        row.createEl('span', { cls: 'lt-chip', text: icon });
+        row.createEl('span', { cls: 'lt-name' + (it.status === 'done' ? ' lt-done' : '') + (!canAccess ? ' lt-locked' : ''), text: (it.name || '(без имени)') + reqText });
         row.createEl('button', { text: '✎' }).onclick = () => new WorkItemEditModal(this.app, this.store, it, () => this.render()).open();
         const del = row.createEl('button', { text: '🗑' });
         del.onclick = () => {
@@ -1035,6 +1110,41 @@ class WorkItemEditModal extends Modal {
     F.select('kind', 'Тип', [['task', 'Дело'], ['idea', 'Идея']]);
     F.select('status', 'Статус', [['backlog', 'Ожидает'], ['in_progress', 'В работе'], ['done', 'Выполнено'], ['dropped', 'Отброшено']]);
     F.stats('effects', 'Эффекты (опц.)');
+    
+    // Секция порога характеристики (только для новых или если еще не установлен)
+    const canEditRequirement = this.isNew || !this.item.minStatRequirement;
+    if (canEditRequirement) {
+      el.createEl('h4', { text: '🔒 Требование к характеристике (read-only после создания)' });
+      const reqRow = el.createDiv({ cls: 'lt-row' });
+      const statSel = reqRow.createEl('select', { cls: 'lt-big-select' });
+      statSel.createEl('option', { value: '', text: 'Без требования' });
+      for (const [key, label] of STATS) {
+        statSel.createEl('option', { value: key, text: label });
+      }
+      if (this.item.minStatRequirement) {
+        statSel.value = this.item.minStatRequirement.stat;
+      }
+      
+      const threshInput = reqRow.createEl('input', { type: 'number', cls: 'lt-big-input', attr: { min: '0', max: '100', placeholder: 'Порог' } });
+      if (this.item.minStatRequirement) {
+        threshInput.value = this.item.minStatRequirement.threshold;
+      }
+      
+      const setReqBtn = el.createEl('button', { text: 'Установить требование', cls: 'mod-cta' });
+      setReqBtn.onclick = () => {
+        if (statSel.value) {
+          this.item.minStatRequirement = { stat: statSel.value, threshold: parseInt(threshInput.value) || 0 };
+          new Notice(`Требование установлено: ${STATS.find(([k]) => k === statSel.value)?.[1]} >= ${threshInput.value}`);
+        } else {
+          this.item.minStatRequirement = null;
+        }
+      };
+    } else if (this.item.minStatRequirement) {
+      // Показываем read-only требование
+      const [statKey, statLabel] = STATS.find(([k]) => k === this.item.minStatRequirement.stat) || ['', '?'];
+      el.createEl('div', { cls: 'lt-notice', text: `🔒 Требование: ${statLabel} >= ${this.item.minStatRequirement.threshold} (нельзя изменить)` });
+    }
+    
     el.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
       if (!this.item.name) { new Notice('Нужно название'); return; }
       if (this.item.status === 'done' && !this.item.doneAt) this.item.doneAt = iso(new Date());
