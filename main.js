@@ -33,6 +33,293 @@ function skillProgress(h) {
   return Math.min(100, Math.round(((h - lv.from) / (lv.to - lv.from)) * 100));
 }
 
+/* ---------- Уровни игрока (50 уровней, самурайская тематика) ---------- */
+const PLAYER_LEVELS = [
+  { level: 0,  name: 'Неофит' },
+  { level: 1,  name: 'Искатель' },
+  { level: 2,  name: 'Ученик' },
+  { level: 3,  name: 'Подмастерье' },
+  { level: 4,  name: 'Кэнси' },           // Ученик самурая
+  { level: 5,  name: 'Адепт' },
+  { level: 6,  name: 'Сталкер' },
+  { level: 7,  name: 'Следопыт' },
+  { level: 8,  name: 'Охотник' },
+  { level: 9,  name: 'Мечник' },
+  { level: 10, name: 'Воин' },
+  { level: 11, name: 'Боец' },
+  { level: 12, name: 'Самурай' },         // Воин благородного сословия
+  { level: 13, name: 'Специалист' },
+  { level: 14, name: 'Эксперт' },
+  { level: 15, name: 'Профи' },
+  { level: 16, name: 'Мастер' },
+  { level: 17, name: 'Виртуоз' },
+  { level: 18, name: 'Ветеран' },
+  { level: 19, name: 'Страж' },
+  { level: 20, name: 'Защитник' },
+  { level: 21, name: 'Герой' },
+  { level: 22, name: 'Чемпион' },
+  { level: 23, name: 'Витязь' },
+  { level: 24, name: 'Паладин' },
+  { level: 25, name: 'Рыцарь' },
+  { level: 26, name: 'Командор' },
+  { level: 27, name: 'Генерал' },
+  { level: 28, name: 'Тактик' },
+  { level: 29, name: 'Стратег' },
+  { level: 30, name: 'Лидер' },
+  { level: 31, name: 'Наставник' },
+  { level: 32, name: 'Учитель' },
+  { level: 33, name: 'Гуру' },
+  { level: 34, name: 'Легенда' },
+  { level: 35, name: 'Архитектор' },
+  { level: 36, name: 'Творец' },
+  { level: 37, name: 'Зодчий' },
+  { level: 38, name: 'Мудрец' },
+  { level: 39, name: 'Философ' },
+  { level: 40, name: 'Дзен-мастер' },     // Мастер дзен-буддизма
+  { level: 41, name: 'Оракул' },
+  { level: 42, name: 'Провидец' },
+  { level: 43, name: 'Ясновидец' },
+  { level: 44, name: 'Маг' },
+  { level: 45, name: 'Чародей' },
+  { level: 46, name: 'Волшебник' },
+  { level: 47, name: 'Вершитель' },
+  { level: 48, name: 'Повелитель' },
+  { level: 49, name: 'Суверен' },
+  { level: 50, name: 'Император' }        // Высший титул
+];
+
+/* ---------- Титулы характеристик (50 уровней для каждой характеристики) ---------- */
+// ИНТ (Интеллект) — путь мудреца и ученого
+const INT_TITLES = [
+  'Наблюдатель', 'Любопытный', 'Читающий', 'Изучающий', 'Познающий',
+  'Мыслитель', 'Аналитик', 'Исследователь', 'Учёный', 'Философ',
+  'Логик', 'Стратег', 'Тактик', 'Расчётливый', 'Мудрый',
+  'Проницательный', 'Глубокий', 'Озарённый', 'Вдохновлённый', 'Гениальный',
+  'Визионер', 'Провидец', 'Мудрец', 'Наставник', 'Учитель',
+  'Гуру', 'Архитектор знаний', 'Хранитель мудрости', 'Вершитель идей', 'Творец концепций',
+  'Демиург мысли', 'Оракул', 'Ясновидец разума', 'Маг интеллекта', 'Чародей логики',
+  'Волшебник познания', 'Повелитель истин', 'Суверен мысли', 'Монарх разума', 'Владыка мудрости',
+  'Император интеллекта', 'Абсолют понимания', 'Божество знания', 'Первоисточник', 'Альфа разум',
+  'Омега мысль', 'Сингулярность', 'Вселенский ум', 'Космическое сознание', 'Бесконечный разум', 'Абсолютная мудрость'
+];
+
+// СИЛ (Сила) — путь воина и бойца
+const STR_TITLES = [
+  'Слабый', 'Хрупкий', 'Тонкий', 'Неокрепший', 'Начинающий',
+  'Крепнущий', 'Сильный', 'Мощный', 'Крепкий', 'Железный',
+  'Стальной', 'Титановый', 'Алмазный', 'Несокрушимый', 'Громоподобный',
+  'Сокрушитель', 'Разрушитель', 'Сокрушающий', 'Дробящий', 'Молот',
+  'Таран', 'Бастион', 'Цитадель', 'Крепость', 'Гора',
+  'Вулкан', 'Землетрясение', 'Ураган', 'Шторм', 'Буря',
+  'Левиафан', 'Кракен', 'Голиаф', 'Атлант', 'Геркулес',
+  'Самсон', 'Богатырь', 'Витязь', 'Паладин', 'Рыцарь силы',
+  'Генерал битвы', 'Владыка мощи', 'Суверен силы', 'Монарх мышц', 'Император мощи',
+  'Абсолют силы', 'Божество войны', 'Первоисточник ярости', 'Альфа хищник', 'Омега разрушения',
+  'Сингулярность мощи', 'Вселенская сила', 'Космическая энергия', 'Бесконечная мощь', 'Абсолютное превосходство'
+];
+
+// ВЫН (Выносливость) — путь атлета и сталкера
+const END_TITLES = [
+  'Истощённый', 'Утомлённый', 'Слабый', 'Неустойчивый', 'Начинающий',
+  'Терпящий', 'Выдерживающий', 'Стоический', 'Упорный', 'Настойчивый',
+  'Твёрдый', 'Крепкий', 'Жилы стальные', 'Непробиваемый', 'Бессмертный',
+  'Феникс', 'Возрождающийся', 'Неутомимый', 'Неостановимый', 'Вечный двигатель',
+  'Марафонец', 'Ультрамарафонец', 'Железный человек', 'Титан выносливости', 'Атлант持久',
+  'Сpartan', 'Легионер', 'Centurion', 'Gladiator', 'Champion',
+  'Legend', 'Myth', 'Eternal', 'Immortal', 'Divine',
+  'Celestial', 'Cosmic', 'Infinite', 'Absolute', 'Supreme',
+  'Transcendent', 'Omnipotent', 'Omnipresent', 'Omniscient', 'Alpha Endurance',
+  'Omega Persistence', 'Singularity Stamina', 'Universal Vigor', 'Quantum Resilience', 'Absolute Immortality'
+];
+
+// ХАР (Харизма) — путь лидера и дипломата
+const CHA_TITLES = [
+  'Незаметный', 'Тихий', 'Скромный', 'Застенчивый', 'Нерешительный',
+  'Общительный', 'Дружелюбный', 'Привлекательный', 'Очаровательный', 'Харизматичный',
+  'Влиятельный', 'Авторитетный', 'Убеждающий', 'Вдохновляющий', 'Лидер',
+  'Оратор', 'Дипломат', 'Переговорщик', 'Посол', 'Представитель',
+  'Магнетический', 'Гипнотический', 'Неотразимый', 'Блистательный', 'Сияющий',
+  'Звезда', 'Икона', 'Символ', 'Легенда', 'Идол',
+  'Кумир', 'Божество', 'Пророк', 'Мессия', 'Спаситель',
+  'Владыка сердец', 'Суверен душ', 'Монарх влияния', 'Император харизмы', 'Абсолют обаяния',
+  'Божество красоты', 'Первоисточник вдохновения', 'Альфа лидер', 'Омега влияние', 'Сингулярность притяжения',
+  'Вселенская любовь', 'Космическая гармония', 'Бесконечное очарование', 'Абсолютная харизма', 'Всемогущество влияния'
+];
+
+// ЗД (Здоровье) — путь целителя и долгожителя
+const HLT_TITLES = [
+  'Болезненный', 'Слабый', 'Хрупкий', 'Уязвимый', 'Нежный',
+  'Выздоравливающий', 'Крепнущий', 'Здоровый', 'Крепкий', 'Сильный',
+  'Бодрый', 'Энергичный', 'Жизнестойкий', 'Иммунный', 'Невосприимчивый',
+  'Целитель', 'Врачеватель', 'Лекарь', 'Доктор', 'Медик',
+  'Санитар', 'Фельдшер', 'Хирург', 'Терапевт', 'Диагност',
+  'Биохакер', 'Нутрициолог', 'Диетолог', 'Фитнес-гуру', 'Йог',
+  'Дзен-мастер тела', 'Целитель души', 'Хранитель здоровья', 'Вершитель жизни', 'Творец долголетия',
+  'Архитектор бессмертия', 'Оракул здоровья', 'Провидец жизни', 'Маг исцеления', 'Чародей восстановления',
+  'Волшебник регенерации', 'Повелитель жизненной силы', 'Суверен здоровья', 'Монарх долголетия', 'Император бессмертия',
+  'Абсолют жизнестойкости', 'Божество исцеления', 'Первоисточник жизни', 'Альфа здоровье', 'Омега восстановление',
+  'Сингулярность регенерации', 'Вселенская жизненная сила', 'Космическая энергия здоровья', 'Бесконечное долголетие', 'Абсолютное бессмертие'
+];
+
+// ЭН (Энергия) — источник силы и мотивации
+const ENR_TITLES = [
+  'Истощённый', 'Пустой', 'Слабый', 'Вялый', 'Апатичный',
+  'Пробуждающийся', 'Бодрящийся', 'Энергичный', 'Активный', 'Динамичный',
+  'Мотивированный', 'Вдохновлённый', 'Страстный', 'Огненный', 'Пламенный',
+  'Искрящийся', 'Светящийся', 'Сияющий', 'Блестящий', 'Ослепительный',
+  'Молниеносный', 'Стремительный', 'Быстрый', 'Скоростной', 'Реактивный',
+  'Турбо', 'Гипер', 'Ультра', 'Мега', 'Макси',
+  'Экстремальный', 'Феноменальный', 'Невероятный', 'Фантастический', 'Космический',
+  'Квантовый', 'Ядерный', 'Термоядерный', 'Звёздный', 'Галактический',
+  'Вселенский', 'Бесконечный', 'Абсолютный', 'Божественный', 'Священный',
+  'Первоисточник энергии', 'Альфа импульс', 'Омега мощность', 'Сингулярность силы', 'Квантовый скачок',
+  'Вселенский взрыв', 'Космический поток', 'Бесконечный потенциал', 'Абсолютная энергия', 'Всемогущество мотивации'
+];
+
+const STAT_TITLES = {
+  intelligence: INT_TITLES,
+  strength: STR_TITLES,
+  endurance: END_TITLES,
+  charisma: CHA_TITLES,
+  health: HLT_TITLES,
+  energy: ENR_TITLES
+};
+
+/* ---------- Награды и типы ---------- */
+const REWARD_TYPES = {
+  ACCESSORY: 'accessory', // Реальный аксессуар (часы, кольцо, браслет)
+  DECOR: 'decor',         // Декор для дома (статуэтка, картина, грамота)
+  TITLE: 'title',         // Титул/Эпитет
+  ACCESS: 'access'        // Доступ к испытаниям
+};
+
+/* ---------- Конфигурация прогрессии по умолчанию ---------- */
+const DEFAULT_LEVELING_CONFIG = {
+  baseXP: 150,          // Базовый опыт для уровня 1 (тяжелее)
+  growthFactor: 2.0,    // Коэффициент роста (2.0 = очень тяжелая прогрессия)
+  formula: 'quadratic', // 'linear', 'quadratic', 'exponential'
+  gloryPerLevel: 50     // Очки славы за каждый уровень
+};
+
+/* ---------- Структура наград по умолчанию ---------- */
+const DEFAULT_REWARDS_DATA = {
+  currency: 0,          // Очки славы (валюта за уровни)
+  inventory: [],        // Разблокированные награды [{id, type, name, unlockedAt}]
+  slots: {
+    accessory: null,    // Текущий носимый аксессуар {id, name}
+    decor: null         // Текущий декор {id, name}
+  },
+  titles: [],           // Разблокированные титулы характеристик [{stat, level, title}]
+  accesses: [],         // Разблокированные доступы к испытаниям [{id, name}]
+  lastProcessedLevel: 0 // Последний обработанный уровень для начисления наград
+};
+
+/* ---------- XP за действия ---------- */
+const XP_REWARDS = {
+  habit: 10,            // За выполнение привычки
+  task: 20,             // За выполнение задачи
+  idea: 20,             // За реализацию идеи
+  goalBase: 40          // За цель (умножается на дни)
+};
+
+/* ---------- Расчет требуемого опыта для уровня (настраиваемая прогрессия) ---------- */
+function xpRequiredForLevel(level, config = {}) {
+  const cfg = { ...DEFAULT_LEVELING_CONFIG, ...config };
+  const baseXP = cfg.baseXP;
+  const growthFactor = cfg.growthFactor;
+  const formula = cfg.formula;
+  
+  if (level <= 0) return 0;
+  
+  switch (formula) {
+    case 'linear':
+      return Math.floor(baseXP * level);
+    case 'exponential':
+      return Math.floor(baseXP * Math.pow(growthFactor, level - 1));
+    case 'quadratic':
+    default:
+      // Квадратичная прогрессия с коэффициентом: baseXP * level^growthFactor
+      return Math.floor(baseXP * Math.pow(level, growthFactor));
+  }
+}
+
+/* ---------- Получить текущий уровень по опыту ---------- */
+function getPlayerLevel(totalXP, config = {}) {
+  const cfg = { ...DEFAULT_LEVELING_CONFIG, ...config };
+  for (let i = PLAYER_LEVELS.length - 1; i >= 0; i--) {
+    const required = xpRequiredForLevel(i, cfg);
+    if (totalXP >= required) {
+      const nextRequired = xpRequiredForLevel(i + 1, cfg);
+      return { 
+        level: i, 
+        name: PLAYER_LEVELS[i].name, 
+        required: required, 
+        next: nextRequired || totalXP,
+        progress: totalXP - required,
+        remaining: nextRequired - totalXP
+      };
+    }
+  }
+  return { 
+    level: 0, 
+    name: PLAYER_LEVELS[0].name, 
+    required: 0, 
+    next: xpRequiredForLevel(1, cfg),
+    progress: totalXP,
+    remaining: xpRequiredForLevel(1, cfg) - totalXP
+  };
+}
+
+/* ---------- Получить титул характеристики ---------- */
+function getStatTitle(statKey, statValue) {
+  const titles = STAT_TITLES[statKey];
+  if (!titles || titles.length === 0) return '';
+  // statValue от 0 до ~100+, индекс от 0 до 49
+  const index = Math.min(Math.floor(statValue), titles.length - 1);
+  return titles[Math.max(0, index)];
+}
+
+/* ---------- Расчет общего XP игрока ---------- */
+function calculateTotalXP(store, journalData) {
+  let totalXP = 0;
+  
+  // XP за привычки
+  Object.values(journalData).forEach(day => {
+    if (day.habitLogs) {
+      day.habitLogs.forEach(log => {
+        if (log.done) {
+          totalXP += XP_REWARDS.habit;
+        }
+      });
+    }
+    
+    // XP за задачи и идеи
+    if (day.completedWorkItems) {
+      day.completedWorkItems.forEach(item => {
+        if (item.kind === 'task') {
+          totalXP += XP_REWARDS.task;
+        } else if (item.kind === 'idea') {
+          totalXP += XP_REWARDS.idea;
+        }
+      });
+    }
+  });
+  
+  // XP за цели
+  if (store.ref && store.ref.goals) {
+    store.ref.goals.forEach(goal => {
+      if (goal.status === 'completed' && goal.completedAt) {
+        const startDate = parseISO(goal.start);
+        const endDate = parseISO(goal.completedAt);
+        const days = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+        totalXP += XP_REWARDS.goalBase * Math.max(1, days);
+      }
+    });
+  }
+  
+  return totalXP;
+}
+
 /* ---------- стартовые данные ---------- */
 function seedReference() {
   return {
@@ -67,7 +354,15 @@ function seedWorkItems() {
 
 /* ---------- Store ---------- */
 class Store {
-  constructor(app) { this.app = app; this.a = app.vault.adapter; this.base = 'LifeTracker'; this.ref = null; this.work = null; this.cache = {}; }
+  constructor(app) { 
+    this.app = app; 
+    this.a = app.vault.adapter; 
+    this.base = 'LifeTracker'; 
+    this.ref = null; 
+    this.work = null; 
+    this.cache = {};
+    this.rewardsData = null;
+  }
   async init() {
     await this.a.mkdir(this.base).catch(() => {});
     await this.a.mkdir(this.base + '/journal').catch(() => {});
@@ -80,9 +375,27 @@ class Store {
     const wp = this.base + '/workItems.json';
     this.work = await this.a.exists(wp) ? JSON.parse(await this.a.read(wp)) : seedWorkItems();
     if (!await this.a.exists(wp)) await this.saveWorkItems();
+    
+    // Инициализация данных наград
+    const rp = this.base + '/rewards.json';
+    let rawData = await this.a.exists(rp) ? JSON.parse(await this.a.read(rp)) : { ...DEFAULT_REWARDS_DATA };
+    // Миграция: добавляем lastProcessedLevel если нет
+    if (rawData.lastProcessedLevel === undefined) {
+      rawData.lastProcessedLevel = 0;
+    }
+    // Миграция: слоты теперь объекты {id, name}
+    if (typeof rawData.slots.accessory === 'string') {
+      rawData.slots.accessory = rawData.slots.accessory ? { id: rawData.slots.accessory, name: rawData.slots.accessory } : null;
+    }
+    if (typeof rawData.slots.decor === 'string') {
+      rawData.slots.decor = rawData.slots.decor ? { id: rawData.slots.decor, name: rawData.slots.decor } : null;
+    }
+    this.rewardsData = rawData;
+    if (!await this.a.exists(rp)) await this.saveRewards();
   }
   dayPath(d) { return this.base + '/journal/' + d + '.json'; }
   workPath() { return this.base + '/workItems.json'; }
+  rewardsPath() { return this.base + '/rewards.json'; }
   emptyDay(date) {
     return {
       schemaVersion: 1,
@@ -109,6 +422,25 @@ class Store {
   async saveDay(date) { if (this.cache[date]) await this.a.write(this.dayPath(date), JSON.stringify(this.cache[date], null, 2)); }
   async saveRef() { await this.a.write(this.base + '/reference.json', JSON.stringify(this.ref, null, 2)); this.cache = {}; }
   async saveWorkItems() { await this.a.write(this.workPath(), JSON.stringify(this.work, null, 2)); }
+  async saveRewards() { await this.a.write(this.rewardsPath(), JSON.stringify(this.rewardsData, null, 2)); }
+  async loadRewards() {
+    const rp = this.rewardsPath();
+    if (await this.a.exists(rp)) {
+      const rawData = JSON.parse(await this.a.read(rp));
+      // Миграция: добавляем lastProcessedLevel если нет
+      if (rawData.lastProcessedLevel === undefined) {
+        rawData.lastProcessedLevel = 0;
+      }
+      // Миграция: слоты теперь объекты {id, name}
+      if (typeof rawData.slots.accessory === 'string') {
+        rawData.slots.accessory = rawData.slots.accessory ? { id: rawData.slots.accessory, name: rawData.slots.accessory } : null;
+      }
+      if (typeof rawData.slots.decor === 'string') {
+        rawData.slots.decor = rawData.slots.decor ? { id: rawData.slots.decor, name: rawData.slots.decor } : null;
+      }
+      this.rewardsData = rawData;
+    }
+  }
   async listDays() { try { const { files } = await this.a.list(this.base + '/journal'); return files.map(f => f.split('/').pop().replace('.json', '')).sort(); } catch (e) { return []; } }
 }
 
@@ -184,6 +516,123 @@ async function weekCompletion(store, ref, today) {
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 };
 }
 
+/* ---------- Compute: Опыт игрока ---------- */
+// XP за выполнение привычки (базовое значение) - синхронизировано с XP_REWARDS.habit
+const XP_HABIT = XP_REWARDS.habit;
+// XP за задачу/идею (в 2 раза больше привычки) - синхронизировано с XP_REWARDS.task/idea
+const XP_TASK_IDEA = XP_REWARDS.task;
+// XP за цель (в 2 раза больше задачи, умноженное на дни) - синхронизировано с XP_REWARDS.goalBase
+const XP_GOAL_BASE = XP_REWARDS.goalBase;
+
+// Расчет опыта за один день
+function computeDayXP(ref, day, workItems = []) {
+  let xp = 0;
+  
+  // Опыт за привычки
+  for (const h of ref.habits) {
+    const l = day.habitLogs.find(x => x.habitId === h.id);
+    if (l && l.done) xp += XP_HABIT;
+  }
+  
+  // Опыт за вещества (как привычки)
+  for (const s of ref.substances) {
+    const l = day.substanceLogs.find(x => x.substanceId === s.id);
+    if (l && l.taken) xp += XP_HABIT;
+  }
+  
+  // Опыт за активности (если выполнены)
+  for (const a of ref.activities) {
+    const l = day.activityLogs.find(x => x.activityId === a.id);
+    if (l && l.amount > 0) xp += XP_HABIT;
+  }
+  
+  // Опыт за задачи и идеи из workItems
+  for (const item of workItems) {
+    if (item.status === 'done' && item.completedDate === day.date) {
+      if (item.kind === 'task' || item.kind === 'idea') {
+        xp += XP_TASK_IDEA;
+      }
+    }
+  }
+  
+  // Опыт за цели (проверяем завершение целей в этот день)
+  for (const g of ref.goals || []) {
+    if (g.status === 'completed' && g.completedDate === day.date) {
+      const daysCount = g.start && g.end 
+        ? Math.max(1, Math.ceil((parseISO(g.end) - parseISO(g.start)) / (1000 * 60 * 60 * 24)))
+        : 1;
+      xp += XP_GOAL_BASE * daysCount;
+    }
+  }
+  
+  return xp;
+}
+
+// Подсчет общего опыта за все дни
+async function computeTotalXP(store) {
+  let totalXP = 0;
+  const days = await store.listDays();
+  const workItems = store.work?.items || [];
+  
+  for (const date of days) {
+    const day = await store.loadDay(date);
+    totalXP += computeDayXP(store.ref, day, workItems);
+  }
+  
+  return totalXP;
+}
+
+// Получить текущий уровень и прогресс игрока
+async function getPlayerProgress(store) {
+  const totalXP = await computeTotalXP(store);
+  return { ...getPlayerLevel(totalXP), totalXP };
+}
+
+/* ---------- Проверка и начисление наград за уровни ---------- */
+async function checkAndGrantLevelRewards(store) {
+  const progress = await getPlayerProgress(store);
+  const rewardsData = store.rewardsData;
+  const cfg = DEFAULT_LEVELING_CONFIG;
+  
+  // Проверяем все уровни от lastProcessedLevel до текущего
+  let grantedGlory = 0;
+  for (let lvl = rewardsData.lastProcessedLevel + 1; lvl <= progress.level; lvl++) {
+    // Начисляем очки славы за уровень
+    grantedGlory += cfg.gloryPerLevel;
+    
+    // Создаем универсальную награду за уровень
+    const rewardId = `level_${lvl}`;
+    if (!rewardsData.inventory.find(r => r.id === rewardId)) {
+      rewardsData.inventory.push({
+        id: rewardId,
+        type: REWARD_TYPES.DECOR,
+        name: `Награда за уровень ${lvl}`,
+        unlockedAt: iso(new Date())
+      });
+    }
+  }
+  
+  // Начисляем очки славы
+  if (grantedGlory > 0) {
+    rewardsData.currency += grantedGlory;
+    rewardsData.lastProcessedLevel = progress.level;
+    await store.saveRewards();
+    return { grantedGlory, newLevel: progress.level };
+  }
+  
+  return null;
+}
+
+/* ---------- Проверка порога характеристики для задачи/идеи ---------- */
+function checkStatRequirement(item, currentStats) {
+  if (!item || !item.minStatRequirement) return true;
+  
+  const req = item.minStatRequirement;
+  const statValue = currentStats[req.stat] || 0;
+  
+  return statValue >= req.threshold;
+}
+
 /* ---------- UI: ДЕНЬ ---------- */
 class DayModal extends Modal {
   constructor(app, store, date) { super(app); this.store = store; this.date = date; }
@@ -194,10 +643,12 @@ class DayModal extends Modal {
     const footer = el.createDiv({ cls: 'lt-footer' });
     const footerText = () => {
       const r = computeDayStats(ref, day), k = dayKcal(ref, day), f = dayFinance(ref, day), c = dayCompletion(ref, day);
+      const xpToday = computeDayXP(ref, day, store.work?.items || []);
       return `🎯 ${c.pct}% (${c.done}/${c.total}) · ` + STATS.map(([key, lab]) => `${lab} ${r.stats[key]}`).join(' · ') +
         ` | ккал ${k.balance >= 0 ? '+' : ''}${k.balance}` +
         ` | ₽ ${f.balance >= 0 ? '+' : ''}${f.balance}` +
-        (r.syn.length ? ` | синергии: ${r.syn.length} ✅` : '');
+        (r.syn.length ? ` | синергии: ${r.syn.length} ✅` : '') +
+        ` | ✨ +${xpToday} XP`;
     };
     const save = debounce(() => { store.saveDay(date); footer.setText(footerText() + ' · сохранено ✓'); }, 400);
     const refresh = () => { footer.setText(footerText()); save(); };
@@ -622,11 +1073,27 @@ class WorkItemsModal extends Modal {
         return it.kind === curKind;
       });
       if (items.length === 0) list.createDiv({ text: '— пусто —' });
+      
+      // Получаем текущие статы для проверки требований
+      const todayStats = computeDayStats(this.store.ref, this.store.cache[iso(new Date())] || { habitLogs: [], substanceLogs: [], activityLogs: [] }).stats;
+      
       for (const it of items) {
         const row = list.createDiv({ cls: 'lt-row' });
         const statusIcons = { backlog: '○', in_progress: '◐', done: '✓', dropped: '✕' };
-        row.createEl('span', { cls: 'lt-chip', text: (it.kind === 'task' ? '📝 ' : '💡 ') + (statusIcons[it.status] || '') });
-        row.createEl('span', { cls: 'lt-name' + (it.status === 'done' ? ' lt-done' : ''), text: it.name || '(без имени)' });
+        
+        // Проверяем требование к характеристике
+        let canAccess = true;
+        let reqText = '';
+        if (it.minStatRequirement) {
+          const [statKey, statLabel] = STATS.find(([k]) => k === it.minStatRequirement.stat) || ['', '?'];
+          const statValue = todayStats[it.minStatRequirement.stat] || 0;
+          canAccess = statValue >= it.minStatRequirement.threshold;
+          reqText = ` (${statLabel} ${statValue}/${it.minStatRequirement.threshold})`;
+        }
+        
+        const icon = canAccess ? (it.kind === 'task' ? '📝 ' : '💡 ') + (statusIcons[it.status] || '') : '🔒 ';
+        row.createEl('span', { cls: 'lt-chip', text: icon });
+        row.createEl('span', { cls: 'lt-name' + (it.status === 'done' ? ' lt-done' : '') + (!canAccess ? ' lt-locked' : ''), text: (it.name || '(без имени)') + reqText });
         row.createEl('button', { text: '✎' }).onclick = () => new WorkItemEditModal(this.app, this.store, it, () => this.render()).open();
         const del = row.createEl('button', { text: '🗑' });
         del.onclick = () => {
@@ -661,6 +1128,41 @@ class WorkItemEditModal extends Modal {
     F.select('kind', 'Тип', [['task', 'Дело'], ['idea', 'Идея']]);
     F.select('status', 'Статус', [['backlog', 'Ожидает'], ['in_progress', 'В работе'], ['done', 'Выполнено'], ['dropped', 'Отброшено']]);
     F.stats('effects', 'Эффекты (опц.)');
+    
+    // Секция порога характеристики (только для новых или если еще не установлен)
+    const canEditRequirement = this.isNew || !this.item.minStatRequirement;
+    if (canEditRequirement) {
+      el.createEl('h4', { text: '🔒 Требование к характеристике (read-only после создания)' });
+      const reqRow = el.createDiv({ cls: 'lt-row' });
+      const statSel = reqRow.createEl('select', { cls: 'lt-big-select' });
+      statSel.createEl('option', { value: '', text: 'Без требования' });
+      for (const [key, label] of STATS) {
+        statSel.createEl('option', { value: key, text: label });
+      }
+      if (this.item.minStatRequirement) {
+        statSel.value = this.item.minStatRequirement.stat;
+      }
+      
+      const threshInput = reqRow.createEl('input', { type: 'number', cls: 'lt-big-input', attr: { min: '0', max: '100', placeholder: 'Порог' } });
+      if (this.item.minStatRequirement) {
+        threshInput.value = this.item.minStatRequirement.threshold;
+      }
+      
+      const setReqBtn = el.createEl('button', { text: 'Установить требование', cls: 'mod-cta' });
+      setReqBtn.onclick = () => {
+        if (statSel.value) {
+          this.item.minStatRequirement = { stat: statSel.value, threshold: parseInt(threshInput.value) || 0 };
+          new Notice(`Требование установлено: ${STATS.find(([k]) => k === statSel.value)?.[1]} >= ${threshInput.value}`);
+        } else {
+          this.item.minStatRequirement = null;
+        }
+      };
+    } else if (this.item.minStatRequirement) {
+      // Показываем read-only требование
+      const [statKey, statLabel] = STATS.find(([k]) => k === this.item.minStatRequirement.stat) || ['', '?'];
+      el.createEl('div', { cls: 'lt-notice', text: `🔒 Требование: ${statLabel} >= ${this.item.minStatRequirement.threshold} (нельзя изменить)` });
+    }
+    
     el.createEl('button', { text: 'Сохранить ✓', cls: 'mod-cta' }).onclick = async () => {
       if (!this.item.name) { new Notice('Нужно название'); return; }
       if (this.item.status === 'done' && !this.item.doneAt) this.item.doneAt = iso(new Date());
@@ -668,6 +1170,138 @@ class WorkItemEditModal extends Modal {
       else { const i = this.store.work.items.findIndex(x => x.id === this.item.id); if (i >= 0) this.store.work.items[i] = this.item; }
       await this.store.saveWorkItems();
       this.onSaved(); this.close();
+    };
+  }
+}
+
+/* ---------- UI: НАГРАДЫ И ТИТУЛЫ ---------- */
+class RewardsModal extends Modal {
+  constructor(app, store) { super(app); this.store = store; }
+  async onOpen() {
+    const el = this.contentEl; el.addClass('lt-rewards');
+    const ref = this.store.ref;
+    const rewardsData = this.store.rewardsData;
+    
+    // Сначала проверяем и начисляем награды за уровни
+    await checkAndGrantLevelRewards(this.store);
+    // Перезагружаем данные после начисления
+    await this.store.loadRewards();
+    
+    // Расчет текущего уровня и XP
+    const progress = await getPlayerProgress(this.store);
+    
+    el.createEl('h2', { text: '🏆 Награды и титулы' });
+    
+    // Секция 1: Уровень игрока
+    const levelSection = el.createDiv({ cls: 'lt-rewards-section' });
+    levelSection.createEl('h3', { text: `⚔️ Уровень ${progress.level} — ${progress.name}` });
+    levelSection.createEl('div', { text: `✨ Всего XP: ${progress.totalXP}` });
+    levelSection.createEl('div', { text: `📊 До следующего уровня: ${progress.remaining} XP` });
+    
+    // Кнопка проверки наград (для отладки)
+    levelSection.createEl('button', { text: '🔄 Проверить награды', cls: 'mod-cta' }).onclick = async () => {
+      const result = await checkAndGrantLevelRewards(this.store);
+      if (result) {
+        new Notice(`Получено ${result.grantedGlory} очков славы! Уровень: ${result.newLevel}`);
+        this.close();
+        new RewardsModal(this.app, this.store).open();
+      } else {
+        new Notice('Нет новых наград');
+      }
+    };
+    
+    // Секция 2: Титулы характеристик
+    el.createEl('h3', { text: '📜 Титулы характеристик' });
+    const stats = computeDayStats(ref, await this.store.loadDay(iso(new Date())));
+    
+    for (const [key, label] of STATS) {
+      const statValue = stats.stats[key] || 0;
+      const title = getStatTitle(key, statValue);
+      const row = el.createDiv({ cls: 'lt-row' });
+      row.createEl('span', { cls: 'lt-name', text: `${label}: ${statValue}` });
+      row.createEl('span', { cls: 'lt-chip lt-title', text: title || '—' });
+    }
+    
+    // Секция 3: Очки славы (валюта наград)
+    el.createEl('h3', { text: '💰 Очки славы' });
+    const currencyRow = el.createDiv({ cls: 'lt-rewards-currency' });
+    currencyRow.createEl('span', { text: `Доступно: ${rewardsData.currency} 🪙` });
+    
+    // Секция 4: Инвентарь наград с кнопками экипировки
+    el.createEl('h3', { text: '🎒 Инвентарь' });
+    if (rewardsData.inventory.length === 0) {
+      el.createEl('p', { text: 'Пока нет наград. Выполняйте задачи и повышайте уровень!' });
+    } else {
+      for (const reward of rewardsData.inventory) {
+        const row = el.createDiv({ cls: 'lt-row' });
+        const icon = reward.type === REWARD_TYPES.ACCESSORY ? '📿' : reward.type === REWARD_TYPES.DECOR ? '🏺' : '📜';
+        row.createEl('span', { text: `${icon} ${reward.name}` });
+        
+        // Кнопки управления
+        const actions = row.createDiv({ cls: 'lt-actions' });
+        
+        if (reward.type === REWARD_TYPES.ACCESSORY || reward.type === REWARD_TYPES.DECOR) {
+          const slotType = reward.type === REWARD_TYPES.ACCESSORY ? 'accessory' : 'decor';
+          const isEquipped = rewardsData.slots[slotType] && rewardsData.slots[slotType].id === reward.id;
+          
+          if (isEquipped) {
+            actions.createEl('button', { text: 'Снять', cls: 'mod-warning' }).onclick = async () => {
+              rewardsData.slots[slotType] = null;
+              await this.store.saveRewards();
+              this.close();
+              new RewardsModal(this.app, this.store).open();
+            };
+          } else {
+            actions.createEl('button', { text: 'Экипировать', cls: 'mod-cta' }).onclick = async () => {
+              rewardsData.slots[slotType] = { id: reward.id, name: reward.name };
+              await this.store.saveRewards();
+              this.close();
+              new RewardsModal(this.app, this.store).open();
+            };
+          }
+        }
+        
+        row.createEl('span', { cls: 'lt-chip', text: new Date(reward.unlockedAt).toLocaleDateString() });
+      }
+    }
+    
+    // Секция 5: Активные слоты
+    el.createEl('h3', { text: '🎯 Активные слоты' });
+    const slotsRow = el.createDiv({ cls: 'lt-row' });
+    slotsRow.createEl('span', { text: `Аксессуар: ${rewardsData.slots.accessory ? rewardsData.slots.accessory.name : '—'}` });
+    slotsRow.createEl('span', { text: `Декор: ${rewardsData.slots.decor ? rewardsData.slots.decor.name : '—'}` });
+    
+    // Кнопка добавления пользовательской награды
+    el.createEl('h3', { text: '➕ Добавить награду' });
+    const addForm = el.createDiv({ cls: 'lt-form' });
+    const nameInput = addForm.createEl('input', { type: 'text', placeholder: 'Название награды', cls: 'lt-big-input' });
+    const typeSelect = addForm.createEl('select', { cls: 'lt-big-select' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.ACCESSORY, text: '📿 Аксессуар' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.DECOR, text: '🏺 Декор' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.TITLE, text: '📜 Титул' });
+    typeSelect.createEl('option', { value: REWARD_TYPES.ACCESS, text: '🔓 Доступ' });
+    
+    addForm.createEl('button', { text: 'Добавить награду (10 🪙)', cls: 'mod-cta' }).onclick = async () => {
+      if (!nameInput.value.trim()) {
+        new Notice('Введите название награды');
+        return;
+      }
+      if (rewardsData.currency < 10) {
+        new Notice('Недостаточно очков славы');
+        return;
+      }
+      
+      rewardsData.inventory.push({
+        id: 'custom_' + Date.now(),
+        type: typeSelect.value,
+        name: nameInput.value.trim(),
+        unlockedAt: iso(new Date())
+      });
+      rewardsData.currency -= 10;
+      await this.store.saveRewards();
+      new Notice('Награда добавлена!');
+      this.close();
+      new RewardsModal(this.app, this.store).open();
     };
   }
 }
@@ -682,6 +1316,24 @@ class DashboardModal extends Modal {
     const day = await this.store.loadDay(today);
 
     el.createEl('h2', { text: '📊 Дашборд персонажа' });
+
+    // 0. Уровень и опыт игрока
+    const progress = await getPlayerProgress(this.store);
+    const xpCurrent = progress.totalXP - progress.required;
+    const xpNeeded = progress.next - progress.required;
+    const xpPct = xpNeeded > 0 ? Math.round((xpCurrent / xpNeeded) * 100) : 100;
+    
+    const levelCard = el.createDiv({ cls: 'lt-dash-card lt-level-card' });
+    levelCard.createEl('div', { cls: 'lt-dash-title', text: `⚔️ Уровень ${progress.level} — ${progress.name}` });
+    levelCard.createEl('div', { cls: 'lt-dash-value', text: `✨ ${progress.totalXP} XP` });
+    const xpBar = levelCard.createDiv({ cls: 'lt-bar' });
+    xpBar.createDiv({ cls: 'lt-bar-fill', attr: { style: `width:${xpPct}%` } });
+    levelCard.createEl('div', { cls: 'lt-dash-subtitle', text: `${xpCurrent}/${xpNeeded} XP до уровня ${progress.level + 1}` });
+
+    // Добавим кнопку для просмотра наград
+    el.createEl('button', { text: '🏆 Награды и титулы', cls: 'mod-cta' }).onclick = () => { 
+      new RewardsModal(this.app, this.store).open(); 
+    };
 
     // 1. Сводка дня
     const c = dayCompletion(ref, day);

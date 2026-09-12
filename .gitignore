@@ -1,0 +1,130 @@
+```gitignore
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
+*.class
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+.env
+.env.local
+.env.*
+
+# Build directories
+dist/
+build/
+target/
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.tgz
+*.gz
+*.rar
+*.7z
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
+*.bak
+*.~
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+.directory
+.folders~
+*.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE specific files
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+.settings/
+.project
+.classpath
+.cproject
+.pydevproject
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+*.coverage
+
+# Testing
+*.pytest_cache/
+.mypy_cache/
+.nyc_output/
+coverage-final.json
+
+# Distribution / packaging
+.Python
+*.egg-info/
+MANIFEST
+*.whl
+
+# Environment variables
+.env
+.envrc
+!.env.example
+!.env.sample
+*.env
+*.env.*
+.env.*
+
+# Documentation builds
+docs/_build/
+
+# Local configuration
+local.properties
+config/local.*
+!config/example.*
+
+# Database
+*.db
+*.db-journal
+
+# Compression
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+```
